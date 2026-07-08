@@ -17,8 +17,8 @@
             <div class="card-body">
                 <div class="form-group">
                     <label class="form-label">路径模板</label>
-                    <input type="text" class="text-field" id="tpl" placeholder="{artist}-{album}/{title}" aria-label="路径模板">
-                    <div class="form-hint">支持: {title} {artist} {album} {year} {genre}</div>
+                    <input type="text" class="text-field" id="tpl" placeholder="downloads/{artist}-{album}/{title}" aria-label="路径模板">
+                    <div class="form-hint">相对音乐库目录的保存路径，无需写扩展名（系统自动补全）。可用变量：{title} 标题（必填）、{artist} 艺术家、{album} 专辑、{year} 年份、{genre} 流派。留空则使用默认值 downloads/{artist}-{album}/{title}。提示：可用变量取决于歌曲来源，部分歌曲的 {album}/{year}/{genre} 可能为空。</div>
                 </div>                <div class="form-group">
                     <label class="form-label">批量下载间隔（秒）</label>
                     <input type="number" class="text-field" id="interval" min="0" step="1" placeholder="0" aria-label="批量下载间隔">
