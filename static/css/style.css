@@ -211,6 +211,52 @@ html[data-theme="dark"] .btn-outlined:hover { background: rgba(199, 191, 255, .1
     color: var(--md-on-surface-variant);
 }
 
+/* 筛选栏 */
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 20px;
+    background: var(--md-surface-1);
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.filter-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 140px;
+}
+
+.filter-item-grow {
+    flex: 1;
+    min-width: 180px;
+}
+
+.filter-label {
+    font-size: 12px;
+    color: var(--md-on-surface-variant);
+}
+
+.select-field {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--md-outline);
+    border-radius: 8px;
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    font-size: 14px;
+    font-family: inherit;
+    box-sizing: border-box;
+    cursor: pointer;
+}
+
+.select-field:focus {
+    outline: none;
+    border-color: var(--md-primary);
+    border-width: 2px;
+}
+
 /* Progress Card */
 .dl-progress { display: none; }
 .dl-progress.active { display: block; }

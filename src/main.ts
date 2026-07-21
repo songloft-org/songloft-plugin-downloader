@@ -30,11 +30,27 @@ router.post('/api/settings', async (req) => {
     return jsonResponse({ ok: true });
 });
 
+// 歌单列表：仅返回 normal 类型（radio 歌单里是电台流，不可下载），供前端筛选下拉
+router.get('/api/playlists', async () => {
+    const playlists = await songloft.playlists.list();
+    const normal = playlists
+        .filter((p: any) => p.type === 'normal')
+        .map((p: any) => ({ id: p.id, name: p.name, songCount: p.songCount }));
+    return jsonResponse({ playlists: normal });
+});
+
 router.get('/api/songs', async (req) => {
     const q = parseQuery(req.query);
-    const limit = parseInt(q.limit || '50');
-    const offset = parseInt(q.offset || '0');
-    const songs = await songloft.songs.list({ limit, offset });
+    // 传了 playlist_id → 只取该歌单内的 remote 歌曲；否则取全部 remote 歌曲
+    const playlistId = q.playlist_id ? parseInt(q.playlist_id) : 0;
+    let songs: any[];
+    if (playlistId > 0) {
+        songs = await songloft.playlists.getSongs(playlistId);
+    } else {
+        const limit = parseInt(q.limit || '50');
+        const offset = parseInt(q.offset || '0');
+        songs = await songloft.songs.list({ limit, offset });
+    }
     const remoteSongs = songs.filter((s: any) => s.type === 'remote');
     return jsonResponse({ songs: remoteSongs, total: remoteSongs.length });
 });

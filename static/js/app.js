@@ -1,9 +1,27 @@
 const P = window.SongloftPlugin;
 const $ = s => document.querySelector(s);
 
-let songs = [];
+let songs = [];              // 当前歌单范围内的全部 remote 歌曲（服务端筛选结果）
 let selected = new Set();
 let dlStatus = {};
+let playlistId = '';         // 当前歌单筛选（'' = 全部歌曲）
+let filterArtist = '';       // 客户端艺术家筛选
+let filterAlbum = '';        // 客户端专辑筛选
+let filterKeyword = '';      // 客户端关键字筛选
+
+// 按客户端筛选条件（艺术家/专辑/关键字）计算可见歌曲
+function visibleSongs() {
+    const kw = filterKeyword.trim().toLowerCase();
+    return songs.filter(s => {
+        if (filterArtist && (s.artist || '') !== filterArtist) return false;
+        if (filterAlbum && (s.album || '') !== filterAlbum) return false;
+        if (kw) {
+            const hay = `${s.title || ''} ${s.artist || ''} ${s.album || ''}`.toLowerCase();
+            if (!hay.includes(kw)) return false;
+        }
+        return true;
+    });
+}
 
 function esc(s) {
     const d = document.createElement('div');
@@ -37,23 +55,52 @@ async function saveSettings() {
     });
 }
 
+async function loadPlaylists() {
+    const r = await P.apiGet('/api/playlists');
+    const playlists = r && r.playlists ? r.playlists : [];
+    const sel = $('#f-playlist');
+    sel.innerHTML = '<option value="">全部歌曲</option>' +
+        playlists.map(p => `<option value="${p.id}">${esc(p.name)} (${p.songCount})</option>`).join('');
+    sel.value = playlistId;
+}
+
 async function loadSongs() {
-    const r = await P.apiGet('/api/songs?limit=500&offset=0');
+    let url = '/api/songs?limit=500&offset=0';
+    if (playlistId) url = `/api/songs?playlist_id=${encodeURIComponent(playlistId)}`;
+    const r = await P.apiGet(url);
     songs = r && r.songs ? r.songs : [];
     selected.clear();
+    rebuildFacets();
     render();
+}
+
+// 依据当前 songs 重建艺术家/专辑下拉选项（去重排序），并保留仍存在的选中值
+function rebuildFacets() {
+    const artists = [...new Set(songs.map(s => s.artist).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh'));
+    const albums = [...new Set(songs.map(s => s.album).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh'));
+    if (!artists.includes(filterArtist)) filterArtist = '';
+    if (!albums.includes(filterAlbum)) filterAlbum = '';
+    fillSelect('#f-artist', artists, filterArtist);
+    fillSelect('#f-album', albums, filterAlbum);
+}
+
+function fillSelect(sel, values, current) {
+    $(sel).innerHTML = '<option value="">全部</option>' +
+        values.map(v => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`).join('');
 }
 
 function render() {
     const tbody = $('#tbody');
-    if (songs.length === 0) {
+    const list = visibleSongs();
+    if (list.length === 0) {
         tbody.innerHTML = '';
+        $('#empty-text').textContent = songs.length === 0 ? '没有可下载的网络歌曲' : '当前筛选条件下没有匹配的歌曲';
         $('#empty').style.display = '';
         updateSelInfo();
         return;
     }
     $('#empty').style.display = 'none';
-    tbody.innerHTML = songs.map(s => {
+    tbody.innerHTML = list.map(s => {
         const src = s.plugin_entry_path || 'URL';
         const st = dlStatus[s.id];
         const stHtml = st
@@ -81,24 +128,40 @@ function render() {
 }
 
 function updateSelInfo() {
+    const list = visibleSongs();
+    const visSelected = list.filter(s => selected.has(s.id)).length;
     $('#sel-info').textContent = `已选 ${selected.size} 首`;
     $('#btn-dl').disabled = selected.size === 0;
-    $('#cb-all').checked = songs.length > 0 && selected.size === songs.length;
+    $('#cb-all').checked = list.length > 0 && visSelected === list.length;
 }
 
-// Header checkbox
+// Header checkbox（作用于当前可见歌曲）
 $('#cb-all').addEventListener('change', e => {
-    if (e.target.checked) songs.forEach(s => selected.add(s.id));
-    else selected.clear();
+    const list = visibleSongs();
+    if (e.target.checked) list.forEach(s => selected.add(s.id));
+    else list.forEach(s => selected.delete(s.id));
     render();
 });
 
-// Select all button
+// Select all button（作用于当前可见歌曲）
 $('#btn-sel-all').addEventListener('click', () => {
-    if (selected.size === songs.length) selected.clear();
-    else songs.forEach(s => selected.add(s.id));
+    const list = visibleSongs();
+    const allSelected = list.length > 0 && list.every(s => selected.has(s.id));
+    if (allSelected) list.forEach(s => selected.delete(s.id));
+    else list.forEach(s => selected.add(s.id));
     render();
 });
+
+// 筛选交互
+$('#f-playlist').addEventListener('change', e => {
+    playlistId = e.target.value;
+    filterArtist = filterAlbum = filterKeyword = '';
+    $('#f-keyword').value = '';
+    loadSongs();
+});
+$('#f-artist').addEventListener('change', e => { filterArtist = e.target.value; render(); });
+$('#f-album').addEventListener('change', e => { filterAlbum = e.target.value; render(); });
+$('#f-keyword').addEventListener('input', e => { filterKeyword = e.target.value; render(); });
 
 // Refresh
 $('#btn-refresh').addEventListener('click', () => {
@@ -154,6 +217,7 @@ $('#btn-dl').addEventListener('click', async () => {
 });
 
 loadSettings();
+loadPlaylists();
 loadSongs();
 
 // 页面加载时检查是否有正在进行的下载
