@@ -13,7 +13,8 @@
   "permissions": [
     "storage",
     "songs.read",
-    "songs.write"
+    "songs.write",
+    "playlists.read"
   ],
   "download_url": "https://github.com/songloft-org/songloft-plugin-downloader/releases/download/v2026.7.21/downloader.jsplugin.zip",
   "updateUrl": "https://raw.githubusercontent.com/songloft-org/songloft-plugin-downloader/main/plugin.json",

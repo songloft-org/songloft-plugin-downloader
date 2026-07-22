@@ -60,7 +60,7 @@ async function loadPlaylists() {
     const playlists = r && r.playlists ? r.playlists : [];
     const sel = $('#f-playlist');
     sel.innerHTML = '<option value="">全部歌曲</option>' +
-        playlists.map(p => `<option value="${p.id}">${esc(p.name)} (${p.songCount})</option>`).join('');
+        playlists.map(p => `<option value="${p.id}">${esc(p.name)} (${p.song_count})</option>`).join('');
     sel.value = playlistId;
 }
 

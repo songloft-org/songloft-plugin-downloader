@@ -35,7 +35,7 @@ router.get('/api/playlists', async () => {
     const playlists = await songloft.playlists.list();
     const normal = playlists
         .filter((p: any) => p.type === 'normal')
-        .map((p: any) => ({ id: p.id, name: p.name, songCount: p.songCount }));
+        .map((p: any) => ({ id: p.id, name: p.name, song_count: p.song_count }));
     return jsonResponse({ playlists: normal });
 });
 
