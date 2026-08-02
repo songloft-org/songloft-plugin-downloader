@@ -29,6 +29,16 @@ function esc(s) {
     return d.innerHTML;
 }
 
+// 属性位置的转义。esc() 走 textContent -> innerHTML，**不会转义引号**，只能用在文本位置；
+// 拼进 attr="..." 时必须用这个，否则含双引号的标题会把属性截断。
+function escAttr(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 function showSnackbar(msg, type) {
     const el = $('#snackbar');
     el.textContent = msg;
@@ -90,17 +100,21 @@ function fillSelect(sel, values, current) {
 }
 
 function render() {
-    const tbody = $('#tbody');
+    const body = $('#tbl-body');
     const list = visibleSongs();
     if (list.length === 0) {
-        tbody.innerHTML = '';
+        body.innerHTML = '';
         $('#empty-text').textContent = songs.length === 0 ? '没有可下载的网络歌曲' : '当前筛选条件下没有匹配的歌曲';
-        $('#empty').style.display = '';
+        $('#empty').classList.remove('is-hidden');
         updateSelInfo();
         return;
     }
-    $('#empty').style.display = 'none';
-    tbody.innerHTML = list.map(s => {
+    $('#empty').classList.add('is-hidden');
+    // 一行 = 连续 6 个 .tbl-td，由 grid 的自动放置换行（grid-auto-flow: row 默认值）。
+    // 刻意**没有**行包裹元素：列宽跨行共享是 grid 的定义性行为，一旦每行自己成为一个
+    // grid 容器，各行的 fr 就各算一次，内容不同就会错位；而 display:contents 这个在
+    // 浏览器里透明化行元素的标准招数在 WebF 下不支持（CSSDisplay 无该取值 -> 退化成 inline）。
+    body.innerHTML = list.map(s => {
         const src = s.plugin_entry_path || 'URL';
         const st = dlStatus[s.id];
         const stHtml = st
@@ -108,15 +122,15 @@ function render() {
                 ? '<span class="status-ok">已下载</span>'
                 : '<span class="status-fail">失败</span>')
             : '';
-        return `<tr data-id="${s.id}">
-      <td><input type="checkbox" class="cb row-cb" data-id="${s.id}" ${selected.has(s.id) ? 'checked' : ''}></td>
-      <td class="song-title">${esc(s.title)}</td>
-      <td class="song-artist">${esc(s.artist || '')}</td>
-      <td class="song-album">${esc(s.album || '')}</td>
-      <td><span class="song-source">${esc(src)}</span></td>
-      <td>${stHtml}</td>
-    </tr>`;
+        // 展平后复选框失去了「所在行」这个无障碍上下文，所以自带 aria-label 说清选的是哪首歌。
+        return `<div class="tbl-td"><input type="checkbox" class="cb row-cb" data-id="${s.id}" aria-label="选择 ${escAttr(s.title)}" ${selected.has(s.id) ? 'checked' : ''}></div>`
+            + `<div class="tbl-td song-title">${esc(s.title)}</div>`
+            + `<div class="tbl-td song-artist">${esc(s.artist || '')}</div>`
+            + `<div class="tbl-td song-album">${esc(s.album || '')}</div>`
+            + `<div class="tbl-td"><span class="song-source">${esc(src)}</span></div>`
+            + `<div class="tbl-td">${stHtml}</div>`;
     }).join('');
+    // 事件委托靠 .row-cb + 复选框自己的 dataset.id，与行结构无关 —— 这段在改成 grid 后一行未动。
     document.querySelectorAll('.row-cb').forEach(cb => {
         cb.addEventListener('change', e => {
             const id = parseInt(e.target.dataset.id);
