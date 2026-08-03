@@ -99,6 +99,35 @@ function fillSelect(sel, values, current) {
         values.map(v => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`).join('');
 }
 
+// 表头与数据区是两个独立的 grid 容器（理由见 style.css 的「列表」一节）。数据区自带纵向
+// 滚动，占位式滚动条（桌面浏览器）会吃掉它的内容宽度，而表头在滚动容器外面吃不到 ——
+// 于是 6 列整体偏移一个滚动条宽度。这个宽度在 CSS 里拿不到，只能实测。
+//
+// 三个必须这么写的点：
+//   ① 用 getBoundingClientRect() 的差值，而不是 offsetWidth - clientWidth：
+//      前者在三条渲染路径上都确定可用，后者在 WebF 下的语义没有验证过。
+//   ② **必须跨帧测**：WebF 的 layout 是异步的，刚写完 innerHTML 立刻量到的是改之前的
+//      布局。调用方一律包 setTimeout(..., 0)。
+//   ③ 结果夹在 [0, 40]：量不到（NaN / 负数 / 荒谬值）就当 0 —— 那恰好是覆盖式滚动条
+//      （WebF、移动端、macOS 默认）的正确答案，属于安全的降级方向。
+function syncScrollbarGutter() {
+    const scroll = $('#tbl-scroll');
+    const body = $('#tbl-body');
+    if (!scroll || !body) return;
+    let gutter = 0;
+    try {
+        const outer = scroll.getBoundingClientRect().width;
+        const inner = body.getBoundingClientRect().width;
+        const d = Math.round(outer - inner);
+        if (isFinite(d) && d > 0 && d <= 40) gutter = d;
+    } catch (e) { gutter = 0; }
+    document.documentElement.style.setProperty('--sl-sbw', gutter + 'px');
+}
+
+// 视口变化会改 .tbl-scroll 的 max-height（calc(100vh - …)），进而改「有没有滚动条」。
+// WebF 里 resize 事件不一定派发，那种情况下就靠每次 render 后那一次同步兜着。
+window.addEventListener('resize', () => setTimeout(syncScrollbarGutter, 0));
+
 function render() {
     const body = $('#tbl-body');
     const list = visibleSongs();
@@ -107,6 +136,7 @@ function render() {
         $('#empty-text').textContent = songs.length === 0 ? '没有可下载的网络歌曲' : '当前筛选条件下没有匹配的歌曲';
         $('#empty').classList.remove('is-hidden');
         updateSelInfo();
+        setTimeout(syncScrollbarGutter, 0);
         return;
     }
     $('#empty').classList.add('is-hidden');
@@ -123,11 +153,15 @@ function render() {
                 : '<span class="status-fail">失败</span>')
             : '';
         // 展平后复选框失去了「所在行」这个无障碍上下文，所以自带 aria-label 说清选的是哪首歌。
+        // title 属性：单元格是 white-space:nowrap + ellipsis（理由见 style.css 的「列表」一节），
+        // 长歌名/艺术家/专辑会被截断，桌面端靠原生 tooltip 看全文。
+        // ⚠️ 属性位置一律 escAttr，**不能用 esc** —— esc 走 textContent -> innerHTML，
+        // 不转义引号，含双引号的歌名会把 title="..." 就地截断。
         return `<div class="tbl-td"><input type="checkbox" class="cb row-cb" data-id="${s.id}" aria-label="选择 ${escAttr(s.title)}" ${selected.has(s.id) ? 'checked' : ''}></div>`
-            + `<div class="tbl-td song-title">${esc(s.title)}</div>`
-            + `<div class="tbl-td song-artist">${esc(s.artist || '')}</div>`
-            + `<div class="tbl-td song-album">${esc(s.album || '')}</div>`
-            + `<div class="tbl-td"><span class="song-source">${esc(src)}</span></div>`
+            + `<div class="tbl-td song-title" title="${escAttr(s.title)}">${esc(s.title)}</div>`
+            + `<div class="tbl-td song-artist" title="${escAttr(s.artist || '')}">${esc(s.artist || '')}</div>`
+            + `<div class="tbl-td song-album" title="${escAttr(s.album || '')}">${esc(s.album || '')}</div>`
+            + `<div class="tbl-td"><span class="song-source" title="${escAttr(src)}">${esc(src)}</span></div>`
             + `<div class="tbl-td">${stHtml}</div>`;
     }).join('');
     // 事件委托靠 .row-cb + 复选框自己的 dataset.id，与行结构无关 —— 这段在改成 grid 后一行未动。
@@ -139,6 +173,8 @@ function render() {
         });
     });
     updateSelInfo();
+    // 行数变了 -> 滚动条可能出现/消失 -> 表头要重新补偿。跨帧，见 syncScrollbarGutter 注释②。
+    setTimeout(syncScrollbarGutter, 0);
 }
 
 function updateSelInfo() {

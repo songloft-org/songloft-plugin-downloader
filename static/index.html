@@ -106,11 +106,15 @@
             <!--
               列表用 CSS Grid 而不是 <table>：部分客户端的插件页由 WebF 渲染，那里 table 家族
               标签一个都没注册（全部退化成 display:block 的未知元素，6 列会竖排成 6 行）。
-              表头与数据区是**两个独立的 grid 容器**，共用同一份 grid-template-columns；
-              表头是 .tbl（普通 block）的直接子节点、靠 position:sticky 贴顶 ——
-              刻意**不是** grid 子项，理由与列宽同步机制见 static/css/style.css 的「列表」一节。
+              表头与数据区是**两个独立的 grid 容器**，共用同一份 grid-template-columns。
+
+              嵌套关系有讲究，别随手扁平化（完整判据见 static/css/style.css 的「列表」一节）：
+                .table-wrap  横向滚动，**表头与数据区都在里面** —— 横向要一起滚才不会错列
+                .tbl         宽度基准 + min-width 下限（普通 block）
+                .tbl-scroll  纵向滚动，**只包数据区** —— 表头留在外面，于是根本不需要
+                             position:sticky（WebF 下 sticky 压根不生效，实测已确认）
             -->
-            <div class="table-wrap" style="max-height:calc(100vh - 380px);overflow-y:auto">
+            <div class="table-wrap">
                 <div class="tbl" role="group" aria-label="下载列表">
                     <div class="tbl-head" id="tbl-head">
                         <div class="tbl-th"><input type="checkbox" class="cb" id="cb-all" aria-label="全选"></div>
@@ -120,7 +124,9 @@
                         <div class="tbl-th">来源</div>
                         <div class="tbl-th">状态</div>
                     </div>
-                    <div class="tbl-body" id="tbl-body"></div>
+                    <div class="tbl-scroll" id="tbl-scroll">
+                        <div class="tbl-body" id="tbl-body"></div>
+                    </div>
                 </div>
                 <div class="empty-state" id="empty">
                     <span class="material-symbols-outlined">cloud_off</span>

@@ -321,24 +321,39 @@ html[data-theme="dark"] .btn-outlined:hover { background: rgba(199, 191, 255, .1
  * 且那些标签在浏览器 / WebView 下不存在 —— 必须按引擎分叉出两套模板长期双份维护。
  * CSS Grid 是标准 CSS，三条渲染路径共用这一份代码、同一套外观。
  *
- * 为什么表头必须是**独立的 grid 容器**，而不是让 6 个表头单元格当 grid 子项去 sticky：
+ * 为什么表头必须是**独立的 grid 容器**，而不是让 6 个表头单元格当 grid 子项：
  * WebF 的 grid 布局把 sticky 子项和 absolute/fixed 归成同一类脱流元素
  * （rendering/grid.dart:347-351 的 _isPositionedGridChild，该判据用在 13 处排除逻辑上，
  * 含构建 grid item 列表本身与固有宽度计算），于是 sticky 表头单元格既不占格子、
  * 也不参与列轨道定宽 —— 表头列宽与数据行各算各的（对不齐）、还压在第一行数据上。
  * 「跨行共享列宽」恰好是 grid 方案唯一的立身之本，所以这条路必须绕开。
  *
- * 但 sticky 本身没坏，坏的只有 grid 路径：rendering/flow.dart 的在流排除判据
- * （:425 / :1212 / :1342）**只判 isSelfPositioned()、不含 sticky**，
- * 而 applyStickyChildOffset 在 flow 路径上照样调用（flow.dart:881）。
- * 所以 .tbl-head 挂在 .tbl（普通 block）下面、作为**块级流内子节点**去 sticky
- * 是走 flow 路径的，符合 CSS 规范也符合 WebF 自身实现。
+ * 为什么表头**不再用 position: sticky**（2026-08-03 容器实测推翻了上一版的判断）：
+ * 上一版按源码推理写着「坏的只有 grid 路径，flow 路径的 sticky 是好的
+ * （flow.dart 的在流排除判据只判 isSelfPositioned()、applyStickyChildOffset
+ * 照样调用）」—— **实测这是错的**。WebF 下 position:sticky 压根不生效，
+ * 且不限于 grid：把一个普通 div 放在 body 顶部、用**页面级**滚动
+ * （documentElement.scrollTop = 300）也整量滚走（y = -300），而 computed
+ * position 仍是 "sticky"、top 仍是 "0px"、scroll 事件也确实派发了。
+ * 「applyStickyChildOffset 有调用点」不等于「偏移被正确算出并应用」。
+ * → 所以改成**结构上根本不需要 sticky**：只让数据区滚动，表头是它的兄弟节点、
+ * 留在纵向滚动容器**外面**。这个结构在浏览器 / 系统 WebView 下同样正确（甚至更简单），
+ * 三条渲染路径仍然共用同一套代码，没有引擎分叉。
  *
- * 两个容器的列宽靠「同一份 grid-template-columns + 完全相同的容器宽度」保持一致：
- * 它们是同一个 .tbl 的兄弟节点，宽度必然相同（纵向滚动条挂在更外层的 .table-wrap 上，
- * 对两者一视同仁，不会只吃掉其中一个的宽度）；而轨道全是定宽 px 或 minmax(0, Nfr)，
- * **没有 auto / min-content / max-content 这类由内容决定的轨道**，
- * 所以每列宽度是「可用宽度」的纯函数，与两个容器里各自装了什么内容无关。
+ * 三层容器各管一件事（改结构前先读懂这三行）：
+ *   .table-wrap  横向滚动（overflow-x）。表头与数据区**都**在它里面 ——
+ *                横向必须一起滚，否则窄屏滚到最右时两者就错开了。
+ *   .tbl         min-width 下限 + 表头/数据区的共同宽度基准（普通 block）。
+ *   .tbl-scroll  纵向滚动（max-height + overflow-y）。**只包数据区**。
+ *
+ * 两个 grid 容器的列宽靠「同一份 grid-template-columns + 相同的内容盒宽度」保持一致：
+ * 轨道全是定宽 px 或 minmax(0, Nfr)，**没有 auto / min-content / max-content
+ * 这类由内容决定的轨道**，所以每列宽度是「可用宽度」的纯函数，与容器里装了什么无关。
+ * 但「可用宽度相同」这一项被纵向滚动条打破了：占位式滚动条只吃 .tbl-scroll 的内容
+ * 宽度，而表头在滚动容器外面吃不到 —— 桌面 Chrome 实测差 15px，WebF 与移动端是
+ * 覆盖式滚动条、差 0px。CSS 里拿不到这个宽度，所以由 app.js 的 syncScrollbarGutter()
+ * 实测出真值写进 --sl-sbw，表头再 padding-right 抵掉它（量不到就退化成 0，
+ * 恰好等于覆盖式滚动条那一侧的正确值）。
  * ⚠️ 改列定义时必须保证：① 两个容器共用同一条规则（现在就是同一个选择器）；
  * ② 不要引入内容相关轨道，否则表头与数据行立刻错开。
  * ⚠️ 也不要用 @media + display:none 去隐藏窄屏下的某几列：WebF 里 display:none 的元素
@@ -362,13 +377,24 @@ html[data-theme="dark"] .btn-outlined:hover { background: rgba(199, 191, 255, .1
     grid-template-columns: 42px minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1.3fr) 72px;
 }
 
-/* 表头贴顶。sticky 的包含块是 .tbl，滚动容器是 .table-wrap。
-   背景同时给容器和单元格：容器上那份保证贴顶时数据行绝不透过来。 */
+/* 纵向滚动只发生在这一层，表头留在外面 —— 所以表头不需要 sticky（WebF 下 sticky
+   压根不生效，见本节开头）。
+   scrollbar-gutter: stable 让「有没有滚动条」不再改变内容宽度：否则列表跨过
+   max-height 那一刻 6 列会整体跳一次，且 --sl-sbw 得跟着数据量重算。
+   浏览器支持该属性即恒定留槽，不支持（含 WebF）则退化成条件留槽，
+   两种情况都由 syncScrollbarGutter() 实测补偿，不依赖属性可用性。 */
+.tbl-scroll {
+    max-height: calc(100vh - 420px);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+
+/* 表头。padding-right 抵掉数据区纵向滚动条占掉的那几像素，真值由 app.js 的
+   syncScrollbarGutter() 量出来写进 --sl-sbw；量不到 / 覆盖式滚动条时为 0。
+   背景同时给容器和单元格：容器上那份保证数据行滚上来时绝不透过来。 */
 .tbl-head {
-    position: sticky;
-    top: 0;
-    z-index: 1;
     background: var(--md-surface);
+    padding-right: var(--sl-sbw, 0px);
 }
 
 .tbl-th,
@@ -376,7 +402,22 @@ html[data-theme="dark"] .btn-outlined:hover { background: rgba(199, 191, 255, .1
     padding: 10px 12px;
     border-bottom: 1px solid var(--md-outline-variant);
     min-width: 0;
-    overflow-wrap: break-word;
+    /* nowrap + ellipsis 有两个理由，缺一不可：
+       ① 观感：这才是表格该有的样子（一行一行，长内容省略号收尾），
+          原来的 overflow-wrap:break-word 会让长歌名把行撑成两三行、行高参差。
+       ② WebF 的 grid `auto` 行高是**在 min-content 宽度下**测量子项高度的
+          （已确诊上游缺陷）。可换行时 CJK 每个字都是断行点 → 「艺术家」3 个字
+          被测成 3 行、12 字的艺术家名被测成 13 行，实测一行占 281px（自然高 41px）、
+          表头 72px，可见区只装得下 1 行，用户看到的是一张几乎空的表。
+          nowrap 下 min-content == max-content，那个错误的第一遍也就量对了，
+          实测行距 41 / 表头 39。
+       ⚠️ 这两条属性是**写在 style.css 里随页面加载**的，不是 JS 事后注入 ——
+       实测必须在行插入**之前**生效才能从第一次布局起就正确。别改成 JS 注入。
+       ⚠️ 完整内容由 app.js 写在单元格的 title 属性上（桌面端悬停可看全）。 */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    overflow-wrap: normal;
 }
 
 .tbl-th {
