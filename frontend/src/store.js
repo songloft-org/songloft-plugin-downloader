@@ -95,10 +95,55 @@ export async function loadSettings() {
   state.settings.embedMetadata = r.embed_metadata !== false;
   state.settings.downloadInterval = String(r.download_interval ?? 0);
   state.settings.autoDownload = !!r.auto_download;
+  // 刚从服务端读回来的这份就是「已保存态」，登记上，否则首屏随便一次 blur
+  // 就会把原样的值再 POST 回去（见 saveSettings）。
+  savedFingerprint = settingsFingerprint();
 }
 
+/// 已持久化那一份的指纹。null = 还没读到过服务端的值。
+let savedFingerprint = null;
+
+/** 按**提交后的语义**取指纹：间隔字段存的是字符串，'1' 与 '01' 提交出去是同一个值。 */
+function settingsFingerprint() {
+  const s = state.settings;
+  return JSON.stringify([
+    s.pathTemplate,
+    api.normalizeInterval(s.downloadInterval),
+    s.embedMetadata,
+    s.autoDownload,
+  ]);
+}
+
+/**
+ * 保存设置。**值没变就不发请求。**
+ *
+ * 这个守卫不是省流量，是修 bug：文本框的「改完即存」在 webf-ui 分支上挂在
+ * `blur` 事件上，而 `<flutter-cupertino-input>` 的 blur 是这样派发的
+ * （webf_cupertino_ui 0.4.1 `input.dart` 的 `initState`）：
+ *
+ *     _focusNode!.addListener(() {
+ *       if (_focusNode!.hasFocus) dispatchEvent(CustomEvent('focus'));
+ *       else                      dispatchEvent(CustomEvent('blur'));
+ *     });
+ *
+ * 注意它**没有记住上一次的焦点态** —— FocusNode 只要在未聚焦状态下发出任何一次
+ * 通知，就会再派发一个 `blur`。所以「blur == 用户改完了一个值」这个前提不成立，
+ * 实测日志里出现过十几次内容完全相同的 `POST /api/settings`。
+ * 与其去猜 FocusNode 什么时候会通知，不如让「值没变」这件事本身变得无害。
+ *
+ * 顺带覆盖了开关与 startDownload 两条调用路径，它们同样不该重复提交。
+ */
 export function saveSettings() {
-  return api.saveSettings(state.settings);
+  const fp = settingsFingerprint();
+  if (fp === savedFingerprint) return Promise.resolve(null);
+  // 乐观登记：请求还在飞的时候又来一次 blur 不该重复提交。失败则回滚，
+  // 让下一次改动（或下一次 blur）能重试。
+  const prev = savedFingerprint;
+  savedFingerprint = fp;
+  return Promise.resolve(api.saveSettings(state.settings)).catch((e) => {
+    savedFingerprint = prev;
+    throw e;
+  });
 }
 
 export async function loadPlaylists() {

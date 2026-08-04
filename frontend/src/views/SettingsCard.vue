@@ -3,13 +3,26 @@ import SlInput from '../ui/SlInput.vue';
 import SlSwitch from '../ui/SlSwitch.vue';
 import SlIcon from '../ui/SlIcon.vue';
 import { state, saveSettings, DEFAULT_TEMPLATE } from '../store.js';
+import { normalizeInterval } from '../api.js';
 
 // 设置项没有保存按钮，改完即存（与旧版一致）。
 // 文本框用 change 语义（HTML 分支是 change 事件，webf-ui 分支是 blur），不是每敲
 // 一个字符就发一次请求。开关是即时的。
+//
+// 注意 webf-ui 分支的 blur **会重复触发**（原因见 store.js 里 saveSettings 的注释），
+// 所以这里可以放心地在每次 change 上调 saveSettings —— 值没变它自己会跳过。
 
 function onSwitch(key, value) {
   state.settings[key] = value;
+  saveSettings();
+}
+
+// 间隔字段在**提交时机**把显示值也一起收敛，否则会出现「框里显示 -4、服务端存的是 0」。
+// 刻意不在输入过程中做：受控输入被外部改写会把光标推到末尾，打字打不下去。
+function onIntervalCommit() {
+  state.settings.downloadInterval = String(
+    normalizeInterval(state.settings.downloadInterval),
+  );
   saveSettings();
 }
 </script>
@@ -44,7 +57,7 @@ function onSwitch(key, value) {
           type="number"
           placeholder="0"
           aria-label="批量下载间隔"
-          @change="saveSettings"
+          @change="onIntervalCommit"
         />
         <div class="dl-hint">0 表示无间隔（默认），建议 1-5 秒以减少服务器负载</div>
       </div>

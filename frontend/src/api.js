@@ -30,12 +30,25 @@ export function fetchSettings() {
   return get(EP.settings);
 }
 
+/**
+ * 把间隔输入框里的原始字符串收敛成合法秒数（为什么存字符串见 store.js）。
+ *
+ * 负数与非数字一律归 0。后端对 `download_interval` 不做范围校验，负值会被原样
+ * 存下来（实测截图里出现过 `-4`），而它最终进的是批量下载的 sleep 参数。
+ * 这里是唯一收口点：`store.js` 算指纹和本文件拼提交体都用它，所以不会出现
+ * 「指纹按 -4 算、提交的是 0」这种永远判定为「有改动」的死循环。
+ */
+export function normalizeInterval(raw) {
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 export function saveSettings(s) {
   return post(EP.settings, {
     path_template: s.pathTemplate,
     embed_metadata: s.embedMetadata,
     // 输入框里存的是原始字符串（见 store.js 的说明），提交时才转数字
-    download_interval: parseInt(s.downloadInterval, 10) || 0,
+    download_interval: normalizeInterval(s.downloadInterval),
     auto_download: s.autoDownload,
   });
 }
