@@ -106,6 +106,50 @@
 }
 
 /*
+ * 下拉的 webf-ui 分支：触发按钮 + 常规流里的内联面板。
+ * 为什么不是原生 <select>、也不是 action sheet 浮层，见 ui/SlSelect.vue 的头注释。
+ *
+ * 刻意**不**给按钮 width:100%：`.dl-btn-inner` 是 cupertino button 的子 widget，
+ * 百分比宽度要靠 WebF 在 WidgetElement 内部解析包含块，不确定；而无界 flex 又会踩
+ * `Infinity or NaN toInt`（见 README 的缺陷表）。让按钮按内容自然宽度就够了，
+ * 长文本靠下面的 max-width + 省略号收住。
+ */
+.dl-select-btn .dl-btn-label {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/*
+ * 面板是**常规流里的块盒**，不是浮层：没有 position/z-index/transform，也不靠
+ * overflow 滚动（选项多时由页面自身滚动）。这几样在 WebF 下都另有坑，而这个控件
+ * 已经因为「赌不确定的东西」返工过两次，这里一律只用最核心的盒模型。
+ */
+.dl-select-panel {
+    margin-top: 4px;
+    min-width: 140px;
+    max-width: 260px;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    background: var(--md-surface);
+}
+
+.dl-select-option {
+    padding: 10px 12px;
+    font-size: 14px;
+    color: var(--md-on-surface);
+    /* 单元格同款省略号：长艺术家名不能把面板撑破版 */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dl-select-option-on {
+    color: var(--md-primary);
+    background: var(--md-primary-container);
+}
+
+/*
  * webf-ui 的 input：**这里只给尺寸，装饰交给 widget 自己画。**
  *
  * 别给它加 border / border-radius / background / padding —— 那会画出两个框：

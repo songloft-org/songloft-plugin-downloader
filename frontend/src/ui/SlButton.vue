@@ -11,12 +11,18 @@ const props = defineProps({
   size: { type: String, default: '' },
   disabled: { type: Boolean, default: false },
   /**
-   * 按钮文字。**刻意是 prop 而不是默认插槽** —— cupertino button 对子节点有两条
-   * 会静默吞掉内容的约束（见模板注释），用 prop 才能让调用方无法违反。
+   * 按钮文字。**刻意是 prop 而不是默认插槽** —— cupertino button 只渲染第一个子节点
+   * （见模板注释），用 prop 才能让调用方无法违反。
    */
   label: { type: String, required: true },
   /** 可选的前置图标，取值见 SlIcon 的 MAP */
   icon: { type: String, default: '' },
+  /**
+   * 可选的**后置**图标（放在文字之后），取值同 icon。
+   * 做成 prop 而不是让调用方自己拼结构，理由与 label 一致 —— cupertino button
+   * 只渲染第一个子节点，结构必须由本组件独占。
+   */
+  trailingIcon: { type: String, default: '' },
 });
 
 const el = ref(null);
@@ -41,24 +47,22 @@ const nativeClass = computed(() =>
 
 <template>
   <!--
-    按钮内容的 DOM 结构由本组件独占，**不开放插槽**。cupertino button 有两条会
-    「静默画出一个空盒子」（无报错、无日志）的约束：
+    按钮内容的 DOM 结构由本组件独占，**不开放插槽**。理由只有一条，但它是读源码确证的：
 
-      ① **只渲染 `childNodes.first`。** 源码就是
-         `childNodes.isEmpty ? SizedBox() : childNodes.first.toWidget()`
-         （button.dart:154），官方 button.md 亦明写 "The first child is used as the
-         primary content"。所以「图标 + 文字」两个子节点时，文字被整段丢弃。
-      ② **裸文本节点画不出来。** 这条是 2026-08-04 在 macOS 客户端上实测到的现象：
-         `<flutter-cupertino-button>全选</flutter-cupertino-button>`（唯一子节点是文本）
-         渲染成一个 minimumSize（small = 32px）的空盒子。**机理没查实** —— 读 webf 的
-         `RenderTextBox` 反而显示脱离 IFC 的文本应当自绘（`paintsSelf` 在找不到
-         建立 IFC 的祖先时默认返回 true），所以别把「必须是元素」当成已解释的结论，
-         它目前只是经验规则。upstream 自己的例子也一律把内容包进元素
-         （如 form_section.md 的 `<span>English</span>`）。
+      **cupertino button 只渲染 `childNodes.first`。** 源码就是
+      `childNodes.isEmpty ? SizedBox() : childNodes.first.toWidget()`（button.dart:154），
+      官方 button.md 亦明写 "The first child is used as the primary content"。所以
+      「图标 + 文字」两个并列子节点时，文字被整段丢弃 —— 无报错、无日志。
 
-    所以：内容包成恰好一个子**元素**，文字再包一层元素。
+    落地：内容包成恰好一个子**元素**，文字再包一层元素。
     起始标签与 <span> 紧贴写在一行，是为了不在两者之间留下空白文本节点 —— 那会成为
-    childNodes.first 而重新触发约束 ①。（condense 模式本会删掉它，这里只是不依赖它。）
+    childNodes.first 而顶掉真正的内容。（condense 模式本会删掉它，这里只是不依赖它。）
+
+    **裸文本子节点本身是可以用的**（upstream button.md 的快速上手示例就是
+    `<FlutterCupertinoButton>Tap me</...>`）。这里一度记过「裸文本画不出来」的实测现象，
+    后来查明那次复测看的是**进程内缓存的旧 bundle**（重装插件没重启客户端，见主仓
+    docs/webf/handoff.md 第 14 条），已撤回。包一层元素仍是本组件的写法 —— 反正有图标时
+    本来就必须包，统一成一种结构少一个分叉。
   -->
   <flutter-cupertino-button
     v-if="useNativeUI"
@@ -69,6 +73,7 @@ const nativeClass = computed(() =>
   ><span class="dl-btn-inner">
       <SlIcon v-if="icon" :name="icon" />
       <span class="dl-btn-label">{{ label }}</span>
+      <SlIcon v-if="trailingIcon" :name="trailingIcon" />
     </span></flutter-cupertino-button>
   <button
     v-else
@@ -79,6 +84,7 @@ const nativeClass = computed(() =>
     <span class="dl-btn-inner">
       <SlIcon v-if="icon" :name="icon" />
       <span class="dl-btn-label">{{ label }}</span>
+      <SlIcon v-if="trailingIcon" :name="trailingIcon" />
     </span>
   </button>
 </template>

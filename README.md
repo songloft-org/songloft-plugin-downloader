@@ -116,6 +116,10 @@ pnpm run build
 - **表单控件**用 `webf_cupertino_ui` 提供的原生元素（`<flutter-cupertino-button>`
   `<flutter-cupertino-input>` `<flutter-cupertino-switch>` `<flutter-cupertino-checkbox>`
   `<flutter-cupertino-icon>`）
+- **下拉选择**是 `<flutter-cupertino-button>` 触发 + **常规流里的内联面板**（普通 `div` 行）。
+  webf-ui 里没有任意选项的 picker，原生 `<select>` 在 WebF 下选中值传不回 JS，
+  而官方的 action sheet 有一个从 JS 侧无法观测的静默失败模式 —— 三者的取舍见下方
+  「内容与装饰的坑」第 6 条
 - **歌曲列表**用 `webf` 包内建的 `<webf-list-view>`（映射到 Flutter 的 ListView，自带 view 回收）
 
 #### 一套业务代码 + 叶子级引擎分叉
@@ -157,22 +161,67 @@ document.createElement('flutter-cupertino-switch').checked !== undefined
 `_controller.text != val` 就整段替换文本并把光标推到末尾），所以数字字段在 store 里
 存字符串、提交时才 `parseInt`，不能在回写路径上做类型转换。
 
-#### 内容与装饰的三个坑（首轮真机才暴露的）
+#### 内容与装饰的坑（真机才暴露的）
 
-上面那两条是读源码读出来的；下面这三条是**页面真的画出来之后**才发现的，共同点是
-**画出了一个东西但不对**，不报错、不打日志：
+上面那两条是读源码读出来的；下面这几条是**页面真的画出来之后**才发现的，共同点是
+**画出了一个东西但不对**（或者干脆是别处的 bug 冒充成本页的），不报错、不打日志：
 
-1. **cupertino button 只渲染 `childNodes.first`（读源码可确证），且裸文本节点画不出来
-   （实测现象，机理未查实）** —— 两条叠加表现为「按钮是个空盒子」。所以 `SlButton.vue`
-   **不开放插槽**，把文字做成 `label` prop、图标做成 `icon` prop，由组件自己拼出「恰好一个
-   子元素 + 文字再包一层」的结构，让调用方没机会违反。两条的证据与存疑之处都写在那个文件的
-   模板注释里。
-2. **cupertino input 的装饰来自 CSS，所以 CSS 上写 `border` 会画出两个框。**
+1. **⚠️ 重装插件后必须完全退出并重启客户端，否则你看到的还是旧 bundle。** 这条放第一位，
+   因为它会让你把已经改对的东西当成没生效。WebF 渲染面用
+   `WebF.fromControllerName(controllerName: 'plugin:<URL>')`，controller 由
+   `WebFControllerManager` 按名字缓存到**进程结束**，命中缓存时**不重新取 bundle**
+   （日志里那句 `evaluated: true, status: PreloadingStatus.done` 就是它）。退出页面再进、
+   切 Tab、切主题都不会重取。不是 HTTP 缓存（客户端已 `enableHttpCache: false`），
+   所以重启就够、不用清缓存目录。取证办法见主仓 `docs/webf/handoff.md` 第 14 条。
+2. **cupertino button 只渲染 `childNodes.first`（读源码可确证）。** 「图标 + 文字」两个并列
+   子节点时文字被整段丢弃。所以 `SlButton.vue` **不开放插槽**，把文字做成 `label` prop、
+   图标做成 `icon` prop，由组件自己拼出「恰好一个子元素 + 文字再包一层」的结构，让调用方
+   没机会违反。（曾经还记过一条「裸文本子节点画不出来」，后来查明那次观察取自第 1 条说的
+   旧 bundle，已撤回 —— upstream `button.md` 的快速上手示例就是裸文本。）
+3. **cupertino input 的装饰来自 CSS，所以 CSS 上写 `border` 会画出两个框。**
    `CupertinoTextField` 直接把 `renderStyle.decoration` 当自己的 `decoration`，而 WebF 的
    render box 也画同一份。故 `.dl-input-native` **只写尺寸**，装饰留给 widget。
-3. **HTML 回落分支也必须真机看一遍。** 本轮 M3 开关选中态的滑块位置算错了 2px 并溢出轨道 ——
+4. **HTML 回落分支也必须真机看一遍。** 本轮 M3 开关选中态的滑块位置算错了 2px 并溢出轨道 ——
    滑块的 `top/left` 是相对轨道的 **padding box** 算的，而轨道有 2px 边框，可用区是 48×28
    不是 52×32。这条跟 WebF 无关，纯 CSS。
+5. **`blur` 会重复派发，所以「改完即存」必须自带「值真的变了才提交」的守卫。**
+   `<flutter-cupertino-input>` 的 blur 是
+   `_focusNode.addListener(() { hasFocus ? dispatch('focus') : dispatch('blur') })` ——
+   **不记上一次的焦点态**，未聚焦状态下任何一次 FocusNode 通知都会再派发一个 `blur`。
+   实测是十几条内容完全相同的 `POST /api/settings` 且界面发卡。守卫在 `store.js` 的
+   `saveSettings()`：按**提交后**的语义算指纹，与已保存的一致就直接返回。
+   指纹和提交体共用 `api.js` 的 `normalizeInterval()`，否则「指纹按 `-4` 算、提交的是 `0`」
+   会让守卫永远判定「有改动」。
+6. **⛔ WebF 下的 `<select>` 不能用来做双向绑定，下拉最终改成了自绘的内联面板。**
+   症状是「换歌单/艺术家/专辑都不重筛列表，只有关键字搜索正常」，不报错不打日志。
+   根因：WebF 的 `HTMLSelectElement` 只暴露 `value` / `selectedIndex` / `disabled` /
+   `multiple` / `required`，**没有 `options`**，于是 Vue 的 `vModelSelect` 指令
+   （`Array.prototype.filter.call(el.options, o => o.selected)`）直接抛 TypeError——
+   **任何框架**的 `<select>` 双向绑定都会踩。绕开 v-model 改成显式 `@change` 读 `el.value`
+   **实测仍然不通**（剩下的断点在 Dart 侧、从 JS 观测不到）。
+   **这个坑返工了三轮**，每一轮的教训都不一样，按顺序记：
+   - ①「下拉显示更新了」**不等于**「数据通了」。WebF 的 select 是 WidgetElement，
+     `_openOptionsMenu()` 先 `widgetElement.selectedIndex = result` 改自己的内部态、
+     再派发 `change`，显示的文字由 Flutter 侧的 `_displayLabel` 维护，与 JS 收不收到值无关。
+   - ② 找到一个足以解释症状的断点，**不等于**找到了全部断点。第二轮只修了 `options`
+     缺失（改成显式 `@change`），真机照旧不通。
+   - ③ 官方的 `<flutter-cupertino-action-sheet>` 是 webf-ui 给「从 N 个里选一个」的正解
+     （31 个元素里没有 picker，`flutter-cupertino-picker` 在 `installWebFCupertinoUI()`
+     里是注释掉的），但它 `show()` 的实现是 `state?._showActionSheetImpl(args)` ——
+     state 还没建立时是**静默 no-op**，「点了什么都不发生」与「正常工作」在 JS 侧
+     无法区分。同类不确定还有：方法能否被 `typeof` 探到（属性与方法在 Dart 侧是两条
+     独立查找路径）、`CustomEvent.detail` 过桥后是对象还是字符串。
+   现在的实现只用**已经在本页跑通**的原语：cupertino button 的 click + 常规流块盒 +
+   普通 `div` 的 click（DOM click 由 WebF 唯一那个全局 tap recognizer 派发）。
+   刻意**不用**浮层（要赌层叠与命中测试，面板得盖在歌曲列表那个 Flutter widget 上）、
+   **不嵌** `<webf-list-view>`（要赌 tap 穿过 Flutter ListView 的手势竞技场）、
+   **不靠 overflow 滚动**（选项多时由页面自身滚动）。代价是展开时把下方内容顶下去。
+   非 WebF 路径继续用原生 `<select>`（浏览器里完全正常，且无障碍最好）。
+7. **图标画成 `?` 方框是客户端缺字体，不是图标名写错。**
+   `webf_cupertino_ui` 没有依赖 `cupertino_icons`，而它的图标全是
+   `IconData(..., fontPackage: 'cupertino_icons')` —— 客户端不补这条依赖就没有那个 ttf。
+   判据：**看得见问号 = 名字对、字体缺；什么都看不见 = 名字错**（`icon.dart` 对查不到的
+   `type` 返回 `SizedBox.shrink()`）。已在 `songloft-player/pubspec.yaml` 补上。
 
 #### 规避掉的 WebF 缺陷
 
@@ -227,18 +276,19 @@ static/              ⚠️ Vite 产物（build.outDir），**已 gitignore，�
 `frontend/vite.config.js` 里有三条不能改的约束（产物必须是单个 `js/app.js`、文件名不带
 hash、HTML 引用必须是 `static/xxx` 形式），每条的理由都写在那个文件的头注释里。
 
-### 本地反复构建时记得 `rm -rf build`
+### 本地反复构建时记得 `rm -rf dist`
 
-builder **不会在构建前清理 `build/` 目录**，而它往 `build/static/` 是用增量拷贝
-（`cpSync`）。所以本地改过 CSS/JS 之后重新构建，上一次那份**带旧内容 hash 的文件会残留**并
-一起被打进 zip —— 表现是包里出现两个 `style.<hash>.css`。`index.html` 引用的仍是新的那份，
-功能不受影响，只是包白白变大、看着费解。
+builder 的临时目录是 `dist/_build/`（`@songloft/plugin-builder` 2.13.1 的
+`buildDir = join(outDir, '_build')`），它只 `mkdirSync(recursive)` **不清理**，而往
+`dist/_build/static/` 是用增量拷贝（`cpSync`）。所以本地改过 CSS/JS 之后重新构建，
+上一次那份**带旧内容 hash 的文件会残留**并一起被打进 zip —— 表现是包里出现两个
+`style.<hash>.css`。`index.html` 引用的仍是新的那份，功能不受影响，只是包白白变大、看着费解。
 
 ```bash
-rm -rf build dist && npm run build   # 本地要产出干净的包时这么跑
+rm -rf dist && npm run build   # 本地要产出干净的包时这么跑
 ```
 
-CI 是全新 checkout、`build/` 不会预先存在，所以**正式发布不受影响**。
+CI 是全新 checkout、`dist/` 不会预先存在，所以**正式发布不受影响**。
 
 ## License
 

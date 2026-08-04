@@ -13,6 +13,10 @@ const MAP = {
   refresh: ['arrow_clockwise', 'refresh'],
   download: ['arrow_down_to_line', 'download'],
   empty: ['slash_circle', 'cloud_off'],
+  // 下拉触发按钮的箭头（SlSelect 的 webf-ui 分支）。cupertino 侧 'chevron_down'
+  // 已在 map 里核对过；Material Symbols 侧 'expand_more' 由宿主那份 315 KB 的
+  // 完整可变字体提供（不是 subset），不会退化成字面文字。
+  chevron: ['chevron_down', 'expand_more'],
 };
 
 const props = defineProps({

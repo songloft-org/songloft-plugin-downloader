@@ -60,11 +60,24 @@ function detectListView() {
 
 export const useNativeListView = detectListView();
 
-if (typeof console !== 'undefined' && console.info) {
-  console.info(
-    '[downloader] engine: webf=%s nativeUI=%s nativeListView=%s',
-    isWebFRuntime,
-    useNativeUI,
-    useNativeListView,
+// 探测结果落日志。这是真机上唯一能确认「页面到底走了哪条分支、跑的是哪份 bundle」
+// 的取证手段：客户端把插件页的 console 转发成 `[plugin][console] …`
+// （plugin_render_surface_webf.dart 里 `controller.onJSLog`）。
+//
+// **不要**用 `%s` 占位符：WebF 的转发是把参数按空格 join、不做 printf 替换
+// （from_native.dart:751 附近的 `_onJSLogStructured`），写了只会把 `%s` 原样打出来。
+//
+// 末尾的 `build=` 是**产物指纹**：重装插件后没完全退出客户端时跑的是进程内缓存的
+// 旧 controller（见 README 第 1 条），此时这个 token 会与当前源码不一致 —— 一眼
+// 就能判掉「白测一轮」。
+if (typeof console !== 'undefined' && console.log) {
+  console.log(
+    '[downloader] engine: webf=' +
+      isWebFRuntime +
+      ' nativeUI=' +
+      useNativeUI +
+      ' nativeListView=' +
+      useNativeListView +
+      ' build=inline-panel',
   );
 }

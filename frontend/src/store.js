@@ -1,4 +1,4 @@
-import { reactive, computed, ref } from 'vue';
+import { reactive, computed, ref, watch } from 'vue';
 import * as api from './api.js';
 
 // 单页应用、单份全局状态、无跨路由复用 —— 刻意不引 Pinia，一个模块级 reactive 够了。
@@ -58,6 +58,38 @@ export const visibleSongs = computed(() => {
     return true;
   });
 });
+
+// 筛选条件 → 可见歌曲数，落一行日志。
+//
+// 为什么值得常驻：这一页的下拉在 WebF 下换过两次实现，症状每次都是「点了没反应」
+// 且**不报错**。而「控件把值 emit 出来了」与「列表真的重筛了」是两件事，只有这一行
+// 能同时证明两者 —— 它既覆盖三个下拉，也覆盖关键字输入（后者一直是好的，正好当对照组）。
+// 日志经客户端 `onJSLog` 转发成 `[plugin][console] …`，是真机上唯一的取证通道。
+watch(
+  () => [
+    state.filter.playlistId,
+    state.filter.artist,
+    state.filter.album,
+    state.filter.keyword,
+  ],
+  ([playlistId, artist, album, keyword]) => {
+    if (typeof console === 'undefined' || !console.log) return;
+    console.log(
+      '[downloader] filter changed: playlist=' +
+        JSON.stringify(playlistId) +
+        ' artist=' +
+        JSON.stringify(artist) +
+        ' album=' +
+        JSON.stringify(album) +
+        ' keyword=' +
+        JSON.stringify(keyword) +
+        ' → visible=' +
+        visibleSongs.value.length +
+        '/' +
+        state.songs.length,
+    );
+  },
+);
 
 /** 依据当前 songs 去重排序出的艺术家选项 */
 export const artistOptions = computed(() =>
