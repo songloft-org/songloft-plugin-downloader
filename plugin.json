@@ -10,7 +10,7 @@
   "entryPath": "downloader",
   "main": "main.js",
   "minHostVersion": "2.6.0",
-  "renderEngine": "webview",
+  "renderEngine": "webf",
   "permissions": [
     "storage",
     "songs.read",

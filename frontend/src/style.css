@@ -1,0 +1,518 @@
+/*
+ * 歌曲下载插件样式。
+ *
+ * ── 与宿主 common.css 的边界 ────────────────────────────────────────────────
+ *
+ * 色板（--md-*）、reset、body、字体、安全区变量（--sl-safe-*）全部来自宿主注入的
+ * common.css，这里不重复定义。复用它的类只有三个自包含的：
+ *   .card                      卡片容器
+ *   .btn / .btn-filled / .btn-outlined / .btn-text   按钮（SlButton 的回落分支）
+ *   .material-symbols-outlined 图标字体（SlIcon 的回落分支）
+ *
+ * 其余一律用 `dl-` 前缀自定义，**刻意不复用** common.css 的 .text-field / .switch /
+ * .snackbar：
+ *   · .text-field 是「外层 wrapper + 浮动 label」的结构，套在裸 input 上语义不对；
+ *   · .switch 依赖特定的 DOM 嵌套；
+ *   · .snackbar 用 transform 定位 position:fixed 元素 —— WebF 下那不生效（见
+ *     views/Snackbar.vue 的说明）。
+ *
+ * ── WebF 相关的硬约束（都有实测依据，别当成观感偏好改掉）──────────────────
+ *
+ * ① 列表单元格必须 `white-space: nowrap` + ellipsis，且**必须写在随页面加载的
+ *    CSS 里**、不能 JS 事后注入。可换行的 CJK 文本在 WebF 的若干测量路径上会被
+ *    按「每字一行」估高。
+ * ② 不用 `position: sticky` —— WebF 下压根不生效（不限 grid，页面级也一样）。
+ *    表头因此是列表容器的兄弟节点，结构上不需要贴住。
+ * ③ 不用 `transform` 位移 `position: fixed` 元素（见上）。
+ * ④ 隐藏元素用 v-if 条件渲染，不用 `display: none` —— WebF 里 display:none 的
+ *    元素仍会挂一个 0 尺寸的 RenderConstrainedBox。
+ * ⑤ `.dl-listview` 必须有**确定高度**：<webf-list-view> 关掉 shrink-wrap 后
+ *    需要有界约束，无界约束下 WebF 解析 flex 会触发 `Infinity or NaN toInt`。
+ * ⑥ 不用 max()/min()（WebF 未实现）；clamp() 可用且参数里能塞 var()。
+ */
+
+/* ── 布局 ─────────────────────────────────────────────────────────────── */
+
+.dl-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 16px;
+    padding-bottom: calc(16px + var(--sl-safe-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.dl-card {
+    overflow: hidden;
+}
+
+.dl-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px 12px;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--md-on-surface);
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.dl-card-body {
+    padding: 16px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ── 表单 ─────────────────────────────────────────────────────────────── */
+
+.dl-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.dl-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--md-on-surface-variant);
+}
+
+.dl-hint {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--md-on-surface-variant);
+}
+
+.dl-input,
+.dl-select {
+    width: 100%;
+    box-sizing: border-box;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--md-outline);
+    border-radius: var(--md-radius-sm);
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--md-on-surface);
+    background: var(--md-surface);
+    outline: none;
+}
+
+.dl-input:focus,
+.dl-select:focus {
+    border-color: var(--md-primary);
+}
+
+/*
+ * webf-ui 的 input：**这里只给尺寸，装饰交给 widget 自己画。**
+ *
+ * 别给它加 border / border-radius / background / padding —— 那会画出两个框：
+ * CupertinoTextField 的 decoration 就是从 `renderStyle.decoration` 取的
+ * （input.dart:301），而 WebF 自己的 render box 也会画同一份 CSS 装饰，于是
+ * 外框（border box）与内框（widget 落在 content box 上，被 padding 内缩）叠在一起。
+ * 都不写时 `renderStyle.decoration` 返回 null（css/box.dart:46），widget 回落到
+ * 自带的 systemGrey6 + radius 8，且随 CupertinoTheme 亮/暗自适应。
+ * font-size / color 对它也是无效的（widget 不读 renderStyle 的文本样式），故不写。
+ */
+.dl-input-native {
+    display: block;
+    width: 100%;
+    height: 40px;
+}
+
+/* 开关（回落分支） */
+.dl-switch {
+    position: relative;
+    display: inline-block;
+    width: 52px;
+    height: 32px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.dl-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.dl-switch-track {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 16px;
+    background: var(--md-surface-variant);
+    border: 2px solid var(--md-outline);
+    transition: background .2s, border-color .2s;
+}
+
+/*
+ * 滑块的 top/left 是相对 track 的 **padding box** 算的，而 track 有 2px 边框，
+ * 所以可用区只有 48×28（不是 52×32）。改这几个数前先把边框宽度算进去：
+ * 视觉坐标 = 2 + 这里的值。M3 的规格是「未选中 16px 滑块圆心距左 16px、
+ * 选中 24px 滑块圆心距左 36px」，故未选中 left = 16-2-8 = 6，选中 left = 36-2-12 = 22。
+ */
+.dl-switch-thumb {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--md-outline);
+    transition: width .2s, height .2s, top .2s, left .2s, background .2s;
+}
+
+.dl-switch input:checked + .dl-switch-track {
+    background: var(--md-primary);
+    border-color: var(--md-primary);
+}
+
+.dl-switch input:checked + .dl-switch-track .dl-switch-thumb {
+    /* 24px 滑块在 48×28 的可用区里居中：top = (28-24)/2 = 2；left 见上方说明 */
+    top: 2px;
+    left: 22px;
+    width: 24px;
+    height: 24px;
+    background: var(--md-on-primary);
+}
+
+.dl-switch-native {
+    flex-shrink: 0;
+}
+
+.dl-switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.dl-switch-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.dl-switch-title {
+    font-size: 14px;
+    color: var(--md-on-surface);
+}
+
+.dl-switch-sub {
+    font-size: 12px;
+    color: var(--md-on-surface-variant);
+}
+
+/* ── 进度 ─────────────────────────────────────────────────────────────── */
+
+.dl-prog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 14px;
+    color: var(--md-on-surface);
+}
+
+.dl-prog-num {
+    font-variant-numeric: tabular-nums;
+    color: var(--md-on-surface-variant);
+}
+
+.dl-prog-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--md-surface-variant);
+    overflow: hidden;
+}
+
+.dl-prog-fill {
+    height: 100%;
+    background: var(--md-primary);
+    transition: width .3s ease;
+}
+
+.dl-prog-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--md-on-surface-variant);
+}
+
+.dl-ok {
+    color: var(--md-success);
+    font-weight: 500;
+}
+
+.dl-fail {
+    color: var(--md-error);
+    font-weight: 500;
+}
+
+/* ── 筛选栏与工具栏 ───────────────────────────────────────────────────── */
+
+.dl-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.dl-filter-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 140px;
+}
+
+.dl-filter-grow {
+    flex: 1;
+    min-width: 180px;
+}
+
+.dl-filter-label {
+    font-size: 12px;
+    color: var(--md-on-surface-variant);
+}
+
+.dl-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+}
+
+.dl-toolbar-spacer {
+    flex: 1;
+    /* 给一个下限，避免在无界约束下解析出 Infinity（WebF 的 flex 崩溃诱因之一） */
+    min-width: 8px;
+}
+
+.dl-toolbar-info {
+    font-size: 13px;
+    color: var(--md-on-surface-variant);
+}
+
+/*
+ * 按钮内容层（两条分支共用同一结构，见 ui/SlButton.vue）。
+ * cupertino button 里放 flex 而不是靠 inline 排版：图标是 WidgetElement，
+ * 当原子 flex item 处理最稳。
+ */
+.dl-btn-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+/*
+ * nowrap 不是观感偏好：按钮宽度由内容的固有宽度决定，而 WebF 在 min-content 宽度下
+ * 测 CJK 文本会把每个字当断行点（见文件头约束 ①），可换行的标签会量出「一字一行」的
+ * 又窄又高的按钮。
+ */
+.dl-btn-label {
+    white-space: nowrap;
+}
+
+/* 只给 WebF 分支的 filled 按钮，理由见 ui/SlButton.vue 的 nativeClass 注释 */
+.dl-btn-native-filled {
+    color: var(--md-on-primary);
+}
+
+.dl-icon {
+    font-size: 18px;
+    line-height: 1;
+}
+
+/* ── 列表 ─────────────────────────────────────────────────────────────── */
+
+/*
+ * 列宽由这组变量在表头（.dl-head）与数据行（.dl-row）之间共享。
+ * 用 flex 而不是 grid：见文件头约束 ①。宽度全部是定值或 flex 比例，
+ * 不出现 auto / min-content，两处才能严格对齐。
+ */
+.dl-list-wrap {
+    overflow-x: auto;
+}
+
+.dl-list-inner {
+    min-width: 620px;
+}
+
+.dl-row {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.dl-row:hover {
+    background: var(--md-surface-1);
+}
+
+.dl-head {
+    background: var(--md-surface);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--md-on-surface-variant);
+}
+
+.dl-head:hover {
+    background: var(--md-surface);
+}
+
+.dl-cell {
+    padding: 10px 12px;
+    box-sizing: border-box;
+    min-width: 0;
+    font-size: 14px;
+    color: var(--md-on-surface);
+    /* 约束 ①：必须随页面加载生效 */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    overflow-wrap: normal;
+}
+
+.dl-col-cb {
+    width: 48px;
+    flex: 0 0 48px;
+    padding: 10px 8px;
+}
+
+.dl-col-title {
+    flex: 2 1 0;
+}
+
+.dl-col-artist {
+    flex: 1.2 1 0;
+}
+
+.dl-col-album {
+    flex: 1.2 1 0;
+}
+
+.dl-col-source {
+    flex: 1.1 1 0;
+}
+
+.dl-col-status {
+    width: 84px;
+    flex: 0 0 84px;
+    font-size: 12px;
+}
+
+.dl-source-chip {
+    display: inline-block;
+    max-width: 100%;
+    padding: 2px 8px;
+    border-radius: var(--md-radius-full);
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+    font-size: 12px;
+    /* ellipsis 对 flex 容器里的匿名文本项不生效，所以这里是 inline-block */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/*
+ * 约束 ⑤：高度必须确定。
+ * clamp() 在 WebF 下可用（max()/min() 不可用），下限保证小窗口里也有几行可见。
+ */
+.dl-listview {
+    display: block;
+    height: clamp(240px, calc(100vh - 420px), 720px);
+}
+
+/*
+ * overflow-y 只给 HTML 回落分支的 div。
+ * <webf-list-view> 自己就是滚动容器（Flutter ListView），再给它一个 CSS 滚动容器
+ * 等于套两层滚动，行为不可预期。
+ */
+div.dl-listview {
+    overflow-y: auto;
+}
+
+.dl-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 48px 20px;
+    color: var(--md-on-surface-variant);
+    text-align: center;
+}
+
+.dl-empty .dl-icon {
+    font-size: 48px;
+    opacity: .5;
+}
+
+.dl-empty p {
+    font-size: 14px;
+    margin: 0;
+}
+
+/* ── Snackbar ─────────────────────────────────────────────────────────── */
+
+/*
+ * 约束 ③：不用 transform 定位 fixed 元素。
+ * 外层拉满 + 内层 margin auto 实现水平居中。
+ */
+.dl-snackbar-layer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(24px + var(--sl-safe-bottom, 0px));
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 300;
+}
+
+.dl-snackbar {
+    max-width: 400px;
+    margin: 0 16px;
+    padding: 12px 24px;
+    border-radius: var(--md-radius-sm);
+    background: var(--md-surface-2);
+    color: var(--md-on-surface);
+    box-shadow: var(--md-shadow-2);
+    font-size: 14px;
+    text-align: center;
+}
+
+.dl-snackbar-success {
+    border-left: 4px solid var(--md-success);
+}
+
+.dl-snackbar-error {
+    border-left: 4px solid var(--md-error);
+}
+
+/* ── 窄屏 ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+    .dl-container {
+        padding: 12px;
+    }
+
+    .dl-card-body,
+    .dl-filter-bar,
+    .dl-toolbar {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .dl-toolbar-info {
+        font-size: 12px;
+    }
+}

@@ -4,3 +4,6 @@ dist/
 .DS_Store
 .mimusic-dev.json
 .songloft-dev.json
+
+# static/ 现在是 frontend/ 的 Vite 产物（build.outDir），不再手写、不入库。
+static/
