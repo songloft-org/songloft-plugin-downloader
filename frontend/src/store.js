@@ -16,6 +16,17 @@ export const state = reactive({
     embedMetadata: true,
     autoDownload: false,
   },
+  /**
+   * 设置是否已从服务端读回。**用途不是显示 loading，而是规避一个会让整页白屏的崩溃**：
+   * `<flutter-cupertino-input>` 是受控的，`val` 变化会走 Flutter 的
+   * `_Editable.updateRenderObject` → `RenderEditable.text=` → `markNeedsLayout`；
+   * 若那一帧鼠标正停在插件页上，MouseTracker 的 hit test 会对同一个
+   * RenderEditable 调 `getClosestGlyphForOffset`，撞上 `Text layout not available`
+   * 断言，随后 `!_debugDuringDeviceUpdate` 无限刷屏、帧循环烂掉（2026-08-05 实测）。
+   * 让输入框**等值到齐后再挂载**，首次赋值就走 mount 而不是 update，消掉这条路径。
+   * 详见 views/SettingsCard.vue 的注释与主仓 docs/webf/handoff.md。
+   */
+  settingsLoaded: false,
   playlists: [],
   songs: [],
   /** songId -> {song_id, status, ...}，来自批量下载进度里的 results */
@@ -130,6 +141,8 @@ export async function loadSettings() {
   // 刚从服务端读回来的这份就是「已保存态」，登记上，否则首屏随便一次 blur
   // 就会把原样的值再 POST 回去（见 saveSettings）。
   savedFingerprint = settingsFingerprint();
+  // 必须**最后**置位：输入框以它为挂载条件，早于赋值置位就又变成 update 路径了。
+  state.settingsLoaded = true;
 }
 
 /// 已持久化那一份的指纹。null = 还没读到过服务端的值。

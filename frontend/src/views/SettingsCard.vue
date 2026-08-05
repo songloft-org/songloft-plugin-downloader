@@ -19,6 +19,11 @@ function onSwitch(key, value) {
 
 // 间隔字段在**提交时机**把显示值也一起收敛，否则会出现「框里显示 -4、服务端存的是 0」。
 // 刻意不在输入过程中做：受控输入被外部改写会把光标推到末尾，打字打不下去。
+//
+// ⚠️ 这里的赋值是**仅剩的一条**「从外部改写受控输入」路径，也就是下面 v-if 规避的那个
+// 崩溃的残余触发面：值真的需要被纠正时（如 -4 → 0）仍会 markNeedsLayout。没法再消除
+// —— 纠正显示值是这个函数存在的意义。触发概率低（要求同一帧鼠标正停在输入框上），
+// 且只在 debug 构建里会烂成白屏（那两个抛出点都是 assert）。
 function onIntervalCommit() {
   state.settings.downloadInterval = String(
     normalizeInterval(state.settings.downloadInterval),
@@ -34,7 +39,18 @@ function onIntervalCommit() {
       <span>下载设置</span>
     </div>
     <div class="dl-card-body">
-      <div class="dl-field">
+      <!--
+        ⚠️ **两个输入框都必须等 `settingsLoaded` 才挂载**，这不是 loading 态的美化。
+        `<flutter-cupertino-input>` 是受控的，`val` 从空变成服务端值会走 Flutter 的
+        `_Editable.updateRenderObject` → `RenderEditable.text=` → `markNeedsLayout`；
+        若那一帧鼠标正停在插件页上，MouseTracker 的 hit test 会对同一个 RenderEditable
+        调 `getClosestGlyphForOffset` 撞上 `Text layout not available` 断言，接着
+        `!_debugDuringDeviceUpdate` 无限刷屏、帧循环烂掉 → **整页白屏**（2026-08-05 实测，
+        日志里紧跟在四个 /api/* 响应之后）。等值到齐再挂载，首次赋值就走 mount 而不是
+        update，这条路径消失。`state.settingsLoaded` 在 store 里**最后**置位。
+        残余触发面见上面 onIntervalCommit 的注释。
+      -->
+      <div v-if="state.settingsLoaded" class="dl-field">
         <label class="dl-label">路径模板</label>
         <SlInput
           v-model="state.settings.pathTemplate"
@@ -50,7 +66,7 @@ function onIntervalCommit() {
         </div>
       </div>
 
-      <div class="dl-field">
+      <div v-if="state.settingsLoaded" class="dl-field">
         <label class="dl-label">批量下载间隔（秒）</label>
         <SlInput
           v-model="state.settings.downloadInterval"

@@ -43,22 +43,41 @@
 // ── 现在的实现 ──────────────────────────────────────────────────────────────
 //
 // 触发按钮（SlButton，即 `<flutter-cupertino-button>`，本页 Toolbar 已验证 click 可用）
-// + **常规流里的内联面板**（`v-if` 展开，普通 `<div>` 行）。选中值从头到尾只在我们
+// + **绝对定位的浮层面板**（`v-if` 展开，普通 `<div>` 行）。选中值从头到尾只在我们
 // 自己的 JS 里流动：点哪一行就 emit 那一行的 value，不读写任何 WebF 元素属性。
 //
-// 面板刻意**不用** `position: absolute/fixed` 浮层，也**不嵌** `<webf-list-view>`：
-//   · 浮层要赌 WebF 的层叠与命中测试（面板得盖在歌曲列表这个 Flutter widget 上）；
-//   · 嵌 list-view 要赌 tap 能穿过 Flutter ListView 的手势竞技场。
-// 两者都是新的不确定。常规流里的块盒 + 普通元素 click 是 WebF 的核心通路
-// （DOM click 由它唯一那个全局 tap recognizer 派发，见主仓 docs/webf/handoff.md），
-// 代价只是展开时把下方内容顶下去、选项多时面板会很长（靠页面自身滚动）。
+// ⚠️ **2026-08-05 改为浮层，推翻了本文件原先的决策。** 原先是「常规流里的内联面板」，
+// 刻意避开 `position: absolute`，理由是「浮层要赌 WebF 的层叠与命中测试（面板得盖在
+// 歌曲列表这个 Flutter widget 上）」。那个顾虑没错，但内联块盒的代价是**一展开就把
+// 工具栏和整张歌曲列表往下顶**，实际使用时比风险更难接受。层叠与命中的两条回归判据
+// 写在 style.css 的 `.dl-select-panel` 注释里，改这块前先看它们。
+//
+// 仍然**不嵌** `<webf-list-view>`（要赌 tap 穿过 Flutter ListView 的手势竞技场），
+// 选项行就是普通 `<div>` —— DOM click 由 WebF 唯一那个全局 tap recognizer 派发
+// （见主仓 docs/webf/handoff.md）。选项多时面板会很长，靠页面自身滚动。
 //
 // 非 WebF 路径（浏览器 / 系统 WebView / Web iframe / 拿不到 WebF 渲染面的平台）
 // 继续用原生 `<select>` —— 在真浏览器里它完全正常，而且是无障碍与键盘操作最好的形态。
 
-import { computed, ref } from 'vue';
+import { computed, onUnmounted } from 'vue';
 import { useNativeUI } from '../engine.js';
 import SlButton from './SlButton.vue';
+import { openToken, nextSelectToken } from './select-open-state.js';
+
+/*
+ * ── 同时只允许一个面板展开 ──────────────────────────────────────────────────
+ *
+ * 展开状态**不是**每个实例自己的 `open` 布尔（那样三个下拉能同时张开并互相盖住），
+ * 而是共享的「当前归属于谁」—— 展开新的自然把旧的收起。
+ *
+ * ⚠️ 那份共享状态必须放在 `select-open-state.js` 里，**不能写在本文件的
+ * `<script setup>` 顶层** —— `<script setup>` 会整体编译进 `setup()`，顶层 `const`
+ * 是**每实例一份**的，互斥会静默失效。这个坑本轮踩过一次，理由写在那个模块的注释里。
+ *
+ * 刻意**不做**「点面板外收起」：WebF 的 DOM click 由全局唯一那个 tap recognizer 派发，
+ * document 级监听与触发按钮自身的 click 谁先到、会不会同一次点击既展开又立刻收起，
+ * 都还没验证过。少一个未验证的交互，好过多一个可能自锁的交互。
+ */
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -82,7 +101,16 @@ const rows = computed(() => [
   ...props.options,
 ]);
 
-const open = ref(false);
+/** 本实例的身份（从共享模块领取，见文件头说明）。 */
+const myToken = nextSelectToken();
+const open = computed(() => openToken.value === myToken);
+
+// 卸载时若展开的是自己就让权。不清理也不会显示错东西（组件都没了），
+// 但留着一个指向已死实例的 token 会让下一次 `openToken.value === myToken` 的判断
+// 依赖「seq 不会回绕」这种隐含前提，不值得省这三行。
+onUnmounted(() => {
+  if (openToken.value === myToken) openToken.value = null;
+});
 
 // 日志前缀统一 `[downloader]`：客户端把插件页的 console 转发成
 // `[plugin][console] …`（plugin_render_surface_webf.dart 的 onJSLog），是这一页
@@ -95,12 +123,13 @@ function logStep(msg) {
 }
 
 function toggle() {
-  open.value = !open.value;
+  // 赋 token 而不是翻布尔：展开自己的同时把别人收起来，是同一个动作。
+  openToken.value = open.value ? null : myToken;
   logStep('toggle open=' + open.value + ' rows=' + rows.value.length);
 }
 
 function pick(row) {
-  open.value = false;
+  openToken.value = null;
   logStep('pick value=' + JSON.stringify(row.value));
   emit('update:modelValue', row.value);
 }
@@ -124,7 +153,8 @@ function onChange(e) {
     />
     <!--
       面板用 v-if 而不是 CSS 隐藏：WebF 里 display:none 的元素仍会挂一个 0 尺寸
-      RenderConstrainedBox（见 README 的缺陷表）。
+      RenderConstrainedBox（见 README 的缺陷表）。**这一条在浮层形态下更要紧** ——
+      常驻一个 0 尺寸的绝对定位盒子，命中测试的表现是另一件没验过的事。
       选项行是普通 div —— 见本文件头注释里「为什么不嵌 webf-list-view」。
     -->
     <div v-if="open" class="dl-select-panel">

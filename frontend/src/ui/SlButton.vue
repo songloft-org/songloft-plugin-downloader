@@ -5,9 +5,19 @@ import { bindNativeProps } from './native-props.js';
 import SlIcon from './SlIcon.vue';
 
 const props = defineProps({
-  /** webf-ui 语义：'filled' | 'tinted' | 'plain'（cupertino 的 variant 取值） */
+  /**
+   * 'filled' | 'tinted' | 'plain'。
+   *
+   * ⚠️ **这个值不再透传给 cupertino 的 `variant` 属性**，只用来选 CSS 类。理由见下面
+   * `nativeClass` 的注释：cupertino 的 filled / tinted 变体自带 iOS 配色且 filled 的底色
+   * 压根改不了，与宿主的 M3 色板对不上。
+   */
   variant: { type: String, default: 'plain' },
-  /** 'small' | 'large'；不传则用 cupertino 默认 */
+  /**
+   * 'small' | 'large'。**当前两条分支都不消费它**（WebF 侧的尺寸由 CSS 的
+   * `min-height` / `padding` 决定，见模板注释）。保留是为了不动调用方，
+   * 也为了将来真需要区分尺寸时有现成的入口。
+   */
   size: { type: String, default: '' },
   disabled: { type: Boolean, default: false },
   /**
@@ -36,13 +46,40 @@ const FALLBACK_CLASS = {
   plain: 'btn btn-text',
 };
 
-// WebF 分支里文字与图标的颜色**只能由 CSS 给** —— 它们是 WebF 的 RenderTextBox /
-// Icon，读的是 renderStyle，Flutter 那侧 CupertinoButton 设的 DefaultTextStyle 到不了。
-// 所以 filled 变体要自己把前景翻成 on-primary，否则是深色字压在实心主色上。
-// **disabled 时不能翻**：cupertino 会把背景换成浅灰（systemGrey4），白字压上去等于看不见。
-const nativeClass = computed(() =>
-  props.variant === 'filled' && !props.disabled ? 'dl-btn-native-filled' : null,
-);
+/*
+ * WebF 分支的外观**整套由 CSS 给**，模板里刻意不传 cupertino 的 `variant` 属性。
+ *
+ * ── 为什么不用 cupertino 自己的 filled / tinted（读源码确证）──────────────────
+ *
+ * `button.dart` 的三个分支里，只有 `default`（即 variant=plain）与 `tinted` 会把
+ * CSS 的 `background-color` 当自己的底色（`color: backgroundColor`）；
+ * **`CupertinoButton.filled` 的构造器压根不接受 color**，它固定用
+ * `CupertinoTheme.primaryColor` —— 插件侧无论怎么写 CSS 都改不动，画出来是 iOS 蓝/灰而
+ * 不是宿主的 M3 primary。圆角同理：filled 分支在没有 CSS `border-radius` 时是
+ * `BorderRadius.zero`（直角），tinted / plain 是固定 `circular(8)`，
+ * 都不是 M3 的胶囊。
+ *
+ * 所以统一走 `plain` 分支，把底色 / 圆角 / 边框 / 前景色全部交给 CSS —— 与 HTML 回落分支
+ * 共用同一套 M3 语义（见 style.css 的 .dl-btn-native*），两条分支的观感这才真的一致。
+ *
+ * 前景色必须由 CSS 给：文字与图标是 WebF 的 RenderTextBox / Icon，读的是 renderStyle，
+ * Flutter 那侧 CupertinoButton 设的 DefaultTextStyle 到不了。
+ */
+const NATIVE_CLASS = {
+  filled: 'dl-btn-native dl-btn-native-filled',
+  tinted: 'dl-btn-native dl-btn-native-outlined',
+  plain: 'dl-btn-native dl-btn-native-text',
+};
+
+// disabled 的变灰也只能靠 CSS：plain 分支的 `disabledColor` 是 `Colors.transparent`
+// （button.dart 的 getDisabledColor 默认分支），挡不住 WebF 自己按 CSS 画的那层底色,
+// 于是不加这个类的话 disabled 按钮看起来跟可用的一模一样。
+// 用类而不是 `[disabled]` 属性选择器：disabled 是命令式赋的 **JS 属性**（见 native-props.js），
+// 不会反映到 HTML 属性上，属性选择器匹配不到。
+const nativeClass = computed(() => {
+  const base = NATIVE_CLASS[props.variant] || NATIVE_CLASS.plain;
+  return props.disabled ? base + ' dl-btn-native-disabled' : base;
+});
 </script>
 
 <template>
@@ -64,11 +101,17 @@ const nativeClass = computed(() =>
     docs/webf/handoff.md 第 14 条），已撤回。包一层元素仍是本组件的写法 —— 反正有图标时
     本来就必须包，统一成一种结构少一个分叉。
   -->
+  <!--
+    刻意不传 `variant` 与 `size`：
+      · `variant` 见上面 nativeClass 的注释（cupertino 的配色/圆角对不上 M3，
+        filled 的底色还改不了）；
+      · `size` 只影响 `getDefaultMinSize()` 与 `getDefaultPadding()` 两个默认值，
+        而 CSS 的 `min-height` / `padding` 会分别顶掉它们（`hasMinHeight` / `hasPadding`
+        为真时 button.dart 优先用 renderStyle 的值），传了也不起作用。
+  -->
   <flutter-cupertino-button
     v-if="useNativeUI"
     ref="el"
-    :variant="variant"
-    :size="size || undefined"
     :class="nativeClass"
   ><span class="dl-btn-inner">
       <SlIcon v-if="icon" :name="icon" />

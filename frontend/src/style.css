@@ -29,23 +29,75 @@
  * ⑤ `.dl-listview` 必须有**确定高度**：<webf-list-view> 关掉 shrink-wrap 后
  *    需要有界约束，无界约束下 WebF 解析 flex 会触发 `Infinity or NaN toInt`。
  * ⑥ 不用 max()/min()（WebF 未实现）；clamp() 可用且参数里能塞 var()。
+ * ⑦ **`flex-wrap: wrap` 的容器里，子项不能靠「内容固有宽度」定宽。** WebF 算 flex base size
+ *    用的是「以放松后的约束实际 layout 一遍子项」得到的宽度，而 block-level 子项在那一遍里
+ *    会 fill-available，于是 base size == 容器宽度 → 从第二个子项起必然换行 → 每项独占一行
+ *    并铺满。WebF 自己给这个 bug 打了补丁（flex.dart 里引 CSS Flexbox §9.2 的那段），但入口
+ *    条件是 `child is RenderFlowLayout`，**WidgetElement（RenderWidget）与嵌套 flex 容器
+ *    （RenderFlexLayout）都不在覆盖范围内**。两条落地规则：
+ *      · WidgetElement 内部的内容层用 `inline-flex`（shrink-to-fit）→ 见 .dl-btn-inner；
+ *      · 嵌套 flex 容器给**显式 `width`** → 见 .dl-filter-item。必须是 `width`：放松条件只看
+ *        `width.isAuto`，写 `flex-basis` 无效；而 `max-width` 会把无界约束透进 hosted Flutter
+ *        子树，撞约束 ⑤ 那个 `Infinity or NaN toInt`。
+ *    列表行 .dl-row 免疫是因为它 flex-wrap 取默认 nowrap（不走换行判定）且每列都是显式 flex 比例。
  */
 
+/* ── 变量 ─────────────────────────────────────────────────────────────── */
+
+/*
+ * 筛选列宽。定义成变量而不是两处各写 170px，是因为**下拉浮层必须显式复用同一个值**
+ * （见 `.dl-select-panel`），两处漂移就会出现「面板比触发按钮宽/窄一截」。
+ *
+ * 挂在 `:root` 而不是 `.dl-filter-item` 上：浮层是 `position:absolute`，WebF 会把
+ * 定位元素**重挂到它的包含块下面**（`dom/element_widget_adapter.dart` 的
+ * PositionPlaceHolder 那一段），从祖先类继承自定义属性还要赌重挂后继承链是否照旧。
+ * `:root` 无论怎么重挂都是祖先 —— 宿主 `common.css` 的 `--md-*` 走的也是这条路。
+ */
+:root {
+    --dl-filter-col: 170px;
+}
+
 /* ── 布局 ─────────────────────────────────────────────────────────────── */
+
+/*
+ * ⚠️⚠️ 约束 ⑧：**flex 容器里不要再套 flex 容器**（WebF 下会整个子树不绘制）。
+ *
+ * 2026-08-05 实测（songloft-org/songloft#341）：`.dl-filter-bar`、`.dl-card-body`、
+ * `.dl-switch-row` 这些 flex 容器，只要子节点自己也是 `display:flex`，
+ * **该容器会画出自己的 border 却一个子节点都不画** —— 无异常、无日志。
+ * 判据是像素扫描：FilterBar 应在的区域内非背景像素只有 184 个（全是它自己那条
+ * `border-bottom`），而结构完全正常（DOM 齐全、`getBoundingClientRect()` 全部正常）。
+ *
+ * 机制：Flutter 的 `RenderObject._paintWithContext` 开头就是
+ * `if (_needsLayout) return;` —— **停在 needsLayout 的 render object 会被静默跳过
+ * 绘制**（源码注释：「说明我们在 layout 阶段被跳过了，因此不需要绘制」）。
+ * 佐证是日志里那条 `editable.dart:2018 assert(!debugNeedsLayout)`：点击命中了一个
+ * layout 未完成的文本框，证明确有 render object 卡在 needsLayout。
+ * 上游根因是 WebF 的 flex 用「以放松约束试排一遍」来测 base size（约束 ⑦ 同一处），
+ * 嵌套 flex 子项（`RenderFlexLayout`）不在它 §9.2 补丁的覆盖范围内。
+ *
+ * 所以**竖向堆叠一律用块流**（`display:block` + `margin`），不用
+ * `flex-direction:column` + `gap`：两者视觉等价，但块流不碰那套测量。
+ * 横向的 flex 容器（`.dl-filter-bar` / `.dl-toolbar` / `.dl-switch-row` / `.dl-row`）
+ * 保留 —— 它们本身没问题，出问题的是**子节点**也是 flex 容器。
+ */
 
 .dl-container {
     max-width: 900px;
     margin: 0 auto;
     padding: 16px;
     padding-bottom: calc(16px + var(--sl-safe-bottom, 0px));
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+    /* 块流：子节点是 .card，宿主 common.css 已给它 margin-bottom:16px，等价于 gap:16 */
 }
 
-.dl-card {
-    overflow: hidden;
-}
+/*
+ * `.dl-card` 刻意**没有任何规则** —— 尤其不能有 `overflow: hidden`，那会把下拉浮层
+ * 在卡片底边整段切掉（详见 `.dl-select-panel` 的注释）。
+ *
+ * 这里只留注释、**不留空规则** `.dl-card {}`：WebF 自带 CSS 解析器，空声明块在它那里
+ * 会不会吞掉后续规则我没有验证过，而本文件后面正好是 `.dl-filter-bar` / `.dl-toolbar` /
+ * `.dl-btn-native` 这些关键布局规则 —— 不值得为一条无用规则赌这个。
+ */
 
 .dl-card-header {
     display: flex;
@@ -59,27 +111,26 @@
 }
 
 .dl-card-body {
-    padding: 16px 20px 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+    /* 底部 4 而不是 20：最后一个子节点的 margin-bottom:16 补足，总高与原 gap 方案一致 */
+    padding: 16px 20px 4px;
 }
 
 /* ── 表单 ─────────────────────────────────────────────────────────────── */
 
 .dl-field {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    margin-bottom: 16px;
 }
 
 .dl-label {
+    display: block;
+    margin-bottom: 6px;
     font-size: 12px;
     font-weight: 500;
     color: var(--md-on-surface-variant);
 }
 
 .dl-hint {
+    margin-top: 6px;
     font-size: 12px;
     line-height: 1.5;
     color: var(--md-on-surface-variant);
@@ -121,19 +172,78 @@
 }
 
 /*
- * 面板是**常规流里的块盒**，不是浮层：没有 position/z-index/transform，也不靠
- * overflow 滚动（选项多时由页面自身滚动）。这几样在 WebF 下都另有坑，而这个控件
- * 已经因为「赌不确定的东西」返工过两次，这里一律只用最核心的盒模型。
+ * 面板是**浮层**：绝对定位在触发按钮下方，盖住后面的内容而不是把它顶下去。
+ *
+ * ⚠️ 这里推翻了本文件此前的一条设计决策。原先刻意用「常规流里的块盒」，理由是
+ * 「浮层要赌 WebF 的层叠与命中测试（面板得盖在歌曲列表那个 Flutter widget 上）」。
+ * 改为浮层是因为内联块盒的代价更难接受：一展开就把工具栏和整张列表往下顶。
+ * 那两个风险仍然真实存在，判据写在下面 —— **改这块前先看它有没有回归**：
+ *   ① 层叠：面板必须**盖住** `<webf-list-view>`，不能被它压在下面（WidgetElement 是
+ *      Flutter widget，它的绘制未必遵守 WebF 的 CSS 层叠顺序）；
+ *   ② 命中：点面板里的选项必须**能选中**，不能被 Flutter ListView 的手势竞技场抢走。
+ * 若任一条回归，退路是把面板挪到页面顶层（`.dl-container` 的直接子节点）并按触发按钮的
+ * `getBoundingClientRect()` 定位 —— 但那要读几何、碰上 WebF 的异步 layout，是更贵的方案。
+ *
+ * 仍然**不用** `transform` 定位（WebF 对 fixed 元素不应用 transform，见文件头约束 ③），
+ * 也**不用** `position: fixed` —— absolute 相对 `.dl-select-wrap` 定位就够了，
+ * 不需要知道触发按钮在视口里的绝对坐标。
+ */
+.dl-select-wrap {
+    position: relative;
+}
+
+/*
+ * ⚠️ **祖先链上不能有 `overflow: hidden`**，否则面板会在那个盒子的边界被整段切掉
+ * （改成浮层前它是常规流块盒，会把卡片撑高，所以不存在这个问题）。`.dl-card` 因此
+ * 刻意不写 overflow —— 加回去的话，艺术家多的时候面板底部会消失。
+ *
+ * `max-height` + `overflow-y` 是防「几百个艺术家把面板拉到屏幕外」的兜底。
+ * 注意本文件此前的设计刻意**不靠 overflow 滚动**（WebF 下未验证），所以这里的定位是
+ * **降级保护而非依赖**：滚动可用最好，不可用时至少面板高度是有界的、不会盖满整页。
+ */
+/*
+ * ⚠️ **面板的宽度必须是显式的 `width`。** 这一条试错过两轮，两条失败的写法都记在这里，
+ * 别再走回去：
+ *
+ *   ① `width: 100%`（子项也 100%）—— **无效**。面板当时是 shrink-to-fit，百分比在固有
+ *      测量阶段解不出父宽 → 退回 auto → 选中行的背景只染了文字那么宽。
+ *   ② `left: 0` + `right: 0` + `width: auto` —— **也无效**，虽然 WebF 确实实现了 CSS 的
+ *      abs-non-replaced 宽度算法（`css/render_style.dart:3210-3221`）。原因是那条分支
+ *      带前提 `parentRenderStyle.paddingBoxLogicalWidth != null`，而包含块
+ *      `.dl-select-wrap` 是 `width: auto` 的块盒 —— 它的宽度只在 layout 期才知道，
+ *      样式期取到的是 null，于是整条分支跳过、又退回 shrink-to-fit。
+ *
+ * 现在走的是同一个函数里的**第一条分支** `if (width.isNotAuto)`，它**无条件**成立、
+ * 不依赖包含块解析。宽度确定之后，选项行只要是 `width: auto` 的块盒就自然 fill-available
+ * 撑满整行 —— 不需要任何百分比。
+ *
+ * `box-sizing: border-box` 不是可选的：否则 1px 边框会让面板比触发按钮宽 2px。
  */
 .dl-select-panel {
-    margin-top: 4px;
-    min-width: 140px;
-    max-width: 260px;
+    position: absolute;
+    /* 紧贴触发按钮下方 4px；100% 是 .dl-select-wrap 的高度 */
+    top: calc(100% + 4px);
+    left: 0;
+    width: var(--dl-filter-col);
+    box-sizing: border-box;
+    z-index: 20;
+    max-height: 320px;
+    overflow-y: auto;
     border: 1px solid var(--md-outline-variant);
     border-radius: var(--md-radius-sm);
     background: var(--md-surface);
+    box-shadow: var(--md-shadow-2);
 }
 
+/*
+ * ⚠️ **刻意不写 `width: 100%`**（这里推翻了上一版的写法，理由见 `.dl-select-panel`）。
+ *
+ * 原先写 `width: 100%` + `border-box` 是想让选中行的背景撑满整行，但**实测无效**：
+ * 面板当时是 shrink-to-fit，百分比在固有测量阶段解不出父宽 → 退回 auto → 背景只染了
+ * 文字那么宽。真正的修法是把**面板**的宽度变确定（显式 `width`，两条失败写法见那里），
+ * 之后这里作为块级盒 `width: auto` 自然 fill-available —— 那条路径在 WebF 里是可靠的
+ * （文件头约束 ⑦ 就是因为它太可靠才出的 flex bug）。
+ */
 .dl-select-option {
     padding: 10px 12px;
     font-size: 14px;
@@ -234,21 +344,22 @@
     align-items: center;
     justify-content: space-between;
     gap: 16px;
+    margin-bottom: 16px;
 }
 
 .dl-switch-label {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
     min-width: 0;
 }
 
 .dl-switch-title {
+    display: block;
     font-size: 14px;
     color: var(--md-on-surface);
 }
 
 .dl-switch-sub {
+    display: block;
+    margin-top: 2px;
     font-size: 12px;
     color: var(--md-on-surface-variant);
 }
@@ -308,19 +419,26 @@
     border-bottom: 1px solid var(--md-outline-variant);
 }
 
+/*
+ * 约束 ⑦：这是「嵌套 flex 容器当 wrap 容器的子项」那一种，必须给显式 width。
+ * 数值按 .dl-container 的 900px 上限核算：内容宽 860（减 padding 20×2），
+ * 170×3 + 200 + gap 12×3 = 746 < 860，搜索项再靠 flex:1 吃掉剩余。
+ * 窄屏（见文末媒体查询）内容宽约 552 < 746 → 正常 wrap 成两行，这才是 wrap 该有的行为。
+ */
 .dl-filter-item {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    width: var(--dl-filter-col);
     min-width: 140px;
 }
 
 .dl-filter-grow {
     flex: 1;
+    width: 200px;
     min-width: 180px;
 }
 
 .dl-filter-label {
+    display: block;
+    margin-bottom: 4px;
     font-size: 12px;
     color: var(--md-on-surface-variant);
 }
@@ -348,12 +466,16 @@
  * 按钮内容层（两条分支共用同一结构，见 ui/SlButton.vue）。
  * cupertino button 里放 flex 而不是靠 inline 排版：图标是 WidgetElement，
  * 当原子 flex item 处理最稳。
+ *
+ * ⚠️ **必须是 `inline-flex`，不能是 `flex`** —— 见文件头约束 ⑦。写成 `flex` 时按钮宽度
+ * 会变成整个 viewport 宽度，于是 .dl-toolbar 里每个按钮各占一行。
  */
 .dl-btn-inner {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    /* 与 common.css 的 .btn 一致（HTML 回落分支就是它） */
+    gap: 8px;
 }
 
 /*
@@ -363,11 +485,75 @@
  */
 .dl-btn-label {
     white-space: nowrap;
+    /* 与 common.css 的 .btn 对齐。WebF 分支不继承 .btn，必须显式写 */
+    font-size: 14px;
+    font-weight: 500;
 }
 
-/* 只给 WebF 分支的 filled 按钮，理由见 ui/SlButton.vue 的 nativeClass 注释 */
+/*
+ * ── WebF 分支按钮的 M3 外观 ──────────────────────────────────────────────────
+ *
+ * cupertino button 一律走 `plain` 分支（模板里不传 `variant`），底色 / 圆角 / 边框 /
+ * 前景色全部在这里给，语义与 common.css 的 .btn / .btn-filled / .btn-outlined 对齐 ——
+ * 两条渲染分支共用同一套 M3 观感。为什么不用 cupertino 自带的 filled / tinted，
+ * 见 ui/SlButton.vue 的 nativeClass 注释（filled 的底色改不了、圆角也不是胶囊）。
+ *
+ * ⚠️ **`padding` 写的是目标值的一半，这不是笔误。** 它会被应用**两次**：
+ * WebF 的 RenderWidget 按 CSS padding 内缩 content box（`_setChildrenOffset` 里
+ * `borderLeftWidth + paddingLeftWidth`），而 button.dart 在 `hasPadding` 为真时又把
+ * 同一份 `renderStyle.padding` 交给 CupertinoButton。M3 要的是左右 24px，故写 12px。
+ * 改这个值前先量像素，别照着 common.css 的 24 抄。
+ *
+ * ⚠️ **高度必须用 `height`，`min-height` 不管用**（实测：写 `min-height: 40px` 量出来 33px）。
+ * `min-height` 只会经 `hasMinHeight` 喂给 CupertinoButton 的 `minimumSize`，那是 Flutter
+ * widget **自绘**的下限；而 WebF 盒子的高度是 `size = getBoxSize(childSize)`
+ * （`rendering/widget.dart:268`）—— 跟着 `.dl-btn-inner` 的内容高走，CSS 边框也画在这个盒子上。
+ * 写 `height` 才会经 `renderStyle.height.isNotAuto` 把子树 tighten 到指定高度。
+ * 同一个道理，`.dl-input-native` 用的也是 `height`。
+ */
+.dl-btn-native {
+    height: 40px;
+    padding: 0 12px;
+    border-radius: var(--md-radius-full);
+}
+
 .dl-btn-native-filled {
+    background-color: var(--md-primary);
     color: var(--md-on-primary);
+}
+
+.dl-btn-native-outlined {
+    background-color: transparent;
+    color: var(--md-primary);
+    border: 1px solid var(--md-outline);
+}
+
+.dl-btn-native-text {
+    background-color: transparent;
+    color: var(--md-primary);
+}
+
+/*
+ * disabled 只能由 CSS 表达：plain 分支的 `disabledColor` 是 `Colors.transparent`，
+ * 挡不住 WebF 按 CSS 画的那层底色。取值与下面 HTML 回落分支的 `.btn:disabled` 一致。
+ */
+.dl-btn-native-disabled {
+    background-color: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+    border-color: transparent;
+}
+
+/*
+ * HTML 回落分支的 disabled。**宿主 common.css 里没有任何 `:disabled` 规则**，
+ * 所以不补这一条的话，webview 下「下载选中」在未选歌时仍是可点的紫色实心 ——
+ * 那既与 WebF 分支不一致，本身也是个缺陷（用户看不出按钮不可用）。
+ */
+.btn:disabled {
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+    border-color: transparent;
+    box-shadow: none;
+    cursor: not-allowed;
 }
 
 .dl-icon {

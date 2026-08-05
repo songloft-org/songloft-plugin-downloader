@@ -60,9 +60,19 @@ function detectListView() {
 
 export const useNativeListView = detectListView();
 
-// 探测结果落日志。这是真机上唯一能确认「页面到底走了哪条分支、跑的是哪份 bundle」
-// 的取证手段：客户端把插件页的 console 转发成 `[plugin][console] …`
+// 探测结果落日志：客户端把插件页的 console 转发成 `[plugin][console] …`
 // （plugin_render_surface_webf.dart 里 `controller.onJSLog`）。
+//
+// ⚠️ **这条通路经常整体失效，不要把「日志里没有」当成「代码没跑」。** `onJSLog` 是在
+// `createController` 里赋值的，而 controller 命中 `WebFControllerManager` 的预加载 /
+// 进程内缓存时 `createController` **压根不跑**（主仓 docs/webf/handoff.md 第 16 条记的
+// 同一个根因，那里列的三连后果没提到 console 也一起丢了）。2026-08-05 实测：整份客户端
+// 日志里 `[plugin][console]` 零命中，而这一行是无条件执行的。
+//
+// 2026-08-05 后续：宿主已改为「渲染面 dispose 时连带销毁缓存的 controller」
+// （主仓 docs/webf/handoff.md 第 27 条），于是每次挂载都会走 `createController`
+// → `onJSLog` 必然被赋值 → **这条通道恢复可用**。旧 bundle 那条陷阱仍然存在，
+// 所以下面的 `build=` 指纹保留。
 //
 // **不要**用 `%s` 占位符：WebF 的转发是把参数按空格 join、不做 printf 替换
 // （from_native.dart:751 附近的 `_onJSLogStructured`），写了只会把 `%s` 原样打出来。
@@ -78,6 +88,6 @@ if (typeof console !== 'undefined' && console.log) {
       useNativeUI +
       ' nativeListView=' +
       useNativeListView +
-      ' build=inline-panel',
+      ' build=excl-open',
   );
 }
