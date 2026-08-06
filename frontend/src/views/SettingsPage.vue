@@ -144,6 +144,7 @@ function onIntervalCommit() {
               显式 :model-value + 单个处理器最稳。
             -->
             <SlSwitch
+              class="dl-switch-control"
               :model-value="state.settings.embedMetadata"
               aria-label="嵌入元数据"
               @update:model-value="onSwitch('embedMetadata', $event)"
@@ -156,6 +157,7 @@ function onIntervalCommit() {
               <span class="dl-switch-sub">播放网络歌曲时自动保存到本地（仅限插件来源歌曲）</span>
             </div>
             <SlSwitch
+              class="dl-switch-control"
               :model-value="state.settings.autoDownload"
               aria-label="播放时自动下载"
               @update:model-value="onSwitch('autoDownload', $event)"

@@ -333,20 +333,25 @@ html.sl-mode-fullscreen {
     height: 40px;
 }
 
-/* 设置页开关行（对齐 SwitchListTile：左标题+副标题，右开关）。别赌 space-between：
- * WebF 里把左侧文案做成 flex:1 更稳，右侧开关保持固定宽度。 */
+/* 设置页开关行（对齐 SwitchListTile：左标题+副标题，右开关）。
+ * WebF 里 flex 剩余宽度的分配仍有点飘，所以直接把开关钉到行尾。 */
 .dl-switch-row {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 16px;
+    position: relative;
+    display: block;
     width: 100%;
+    padding: 4px 68px 4px 0;
     margin-bottom: 16px;
 }
 
 .dl-switch-label {
-    flex: 1;
     min-width: 0;
+}
+
+.dl-switch-control {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    margin-top: -16px;
 }
 
 .dl-switch-title {
