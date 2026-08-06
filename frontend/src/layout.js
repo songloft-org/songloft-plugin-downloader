@@ -86,8 +86,8 @@ const FALLBACK_BOTTOM_PAD = 16;
  * 空串（所以 `--sl-safe-bottom` 本身读不到，只能读它参与计算后的 paddingBottom）。
  */
 export function pageBottomGap() {
-    // 卡片：border-bottom 1 + margin-bottom 24（见 style.css 的 .dl-card）
-    const cardGap = 25;
+    // 列表下方已无卡片（主体改平铺 .dl-body，无边框/外边距），只剩容器 padding-bottom。
+    const cardGap = 0;
     let pad = FALLBACK_BOTTOM_PAD;
     try {
         const el = document.querySelector('.dl-container');

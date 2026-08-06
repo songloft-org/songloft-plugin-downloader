@@ -12,6 +12,7 @@ const MAP = {
   settings: 'settings',
   refresh: 'refresh',
   download: 'download',
+  selectAll: 'select_all',
   empty: 'cloud_off',
   chevron: 'expand_more',
   back: 'arrow_back',

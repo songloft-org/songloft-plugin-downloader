@@ -23,33 +23,31 @@ const toOptions = (values) => values.map((v) => ({ value: v, label: v }));
   -->
   <div class="dl-filter-bar">
     <div class="dl-filter-item dl-filter-z4">
-      <label class="dl-filter-label">歌单</label>
       <SlSelect
         :model-value="state.filter.playlistId"
         :options="playlistOptions"
-        placeholder="全部歌曲"
+        placeholder="歌单"
         aria-label="按歌单筛选"
         @update:model-value="changePlaylist"
       />
     </div>
     <div class="dl-filter-item dl-filter-z3">
-      <label class="dl-filter-label">艺术家</label>
       <SlSelect
         v-model="state.filter.artist"
         :options="toOptions(artistOptions)"
+        placeholder="艺术家"
         aria-label="按艺术家筛选"
       />
     </div>
     <div class="dl-filter-item dl-filter-z2">
-      <label class="dl-filter-label">专辑</label>
       <SlSelect
         v-model="state.filter.album"
         :options="toOptions(albumOptions)"
+        placeholder="专辑"
         aria-label="按专辑筛选"
       />
     </div>
     <div class="dl-filter-item dl-filter-grow dl-filter-z1">
-      <label class="dl-filter-label">搜索</label>
       <!--
         `:key` 挂 keywordGen：切歌单清空关键字时（store.js changePlaylist）代数 +1，
         输入框带空值重挂载 —— 原生输入是非受控的，这是外部清空唯一能落到 DOM 的通道

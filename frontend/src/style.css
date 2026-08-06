@@ -54,17 +54,20 @@
  * measureListHeight 实测覆盖成内联 height —— 这里只保证首帧不崩、大致合理。
  * 整条表达式放进变量（不写成 calc 里再嵌 var），避免解析失败导致整条声明失效。
  *
- * 扣除量按「列表顶边以上的固定 chrome」核算（tab/browser，有自绘页头）：
- *   容器 pad-top 16 + 页头 56+8 + 组标题 24 + 卡上边框 1 + 筛选栏 ~85 + 工具栏 64
- *   + 卡下边框与外边距 25 + 容器 pad-bottom 16 ≈ 300（列表不再有表头，比旧版少 41）。
- * fullscreen 无自绘页头 → 减 64 ≈ 236。窄屏筛选栏 wrap 成两行(+72)、容器 pad 16→12(-8)。
+ * 扣除量按「列表顶边以上的固定 chrome」核算（tab/browser，有自绘页头；操作已进顶栏，
+ * 不再有工具栏行与组标题）：
+ *   容器 pad-top 16 + 页头 56+8 + 筛选栏一行 ~64 + 筛选栏下边框 1
+ *   + 容器 pad-bottom 16 ≈ 160（宽屏筛选一行）。
+ * fullscreen 无自绘页头但有等高动作行(56+8)，chrome 与 tab/browser 接近 → 也用 160。
+ * 窄屏筛选 wrap 成两行(+48)、容器 pad 16→12(-8) → 见下方 @media 覆盖。
+ * 兜底略偏保守（首帧宁矮不溢出），权威值由 JS measureListHeight 实测覆盖。
  */
 :root {
-    --dl-list-h: clamp(240px, calc(100vh - 300px), 720px);
+    --dl-list-h: clamp(240px, calc(100vh - 190px), 720px);
 }
 
 html.sl-mode-fullscreen {
-    --dl-list-h: clamp(240px, calc(100vh - 236px), 720px);
+    --dl-list-h: clamp(240px, calc(100vh - 190px), 720px);
 }
 
 /* ── 布局 ─────────────────────────────────────────────────────────────── */
@@ -104,14 +107,12 @@ html.sl-mode-fullscreen {
 }
 
 /*
- * 卡片：直接用宿主 `.card`（已是 SectionCard 形制：surface-container 底 + 1px
- * outline-variant + 16 圆角 + 无阴影）。`.dl-card` 只覆盖两处差异：
- *   · padding:0 —— 本页卡片的子节点（.dl-card-body / 筛选栏 / 工具栏 / 列表）各自管
- *     内边距，不要宿主 .card 的 20；
+ * 卡片：直接用宿主 `.card`（SectionCard 形制：surface-container 底 + 1px
+ * outline-variant + 16 圆角 + 无阴影）。主页主体已改**平铺**（.dl-body，无卡片），
+ * 现在 `.dl-card` 只剩两处用：进度卡（ProgressCard）与设置页的分组卡（SettingsPage）。
+ * 只覆盖两处差异：
+ *   · padding:0 —— 卡内子节点（.dl-card-body）自管内边距，不要宿主 .card 的 20；
  *   · margin-bottom:24 —— 对齐 AppSpacing.lg（宿主 .card 是 16）。
- *
- * ⚠️ **不能有 `overflow: hidden`**（宿主 .card 也没有）：会把下拉浮层在卡片底边切掉。
- * 这里也不需要裁剪 —— 卡内子节点背景透明（继承卡片底色）。
  */
 .dl-card {
     padding: 0;
@@ -393,13 +394,15 @@ html.sl-mode-fullscreen {
     font-weight: 500;
 }
 
-/* ── 筛选栏与工具栏 ───────────────────────────────────────────────────── */
+/* ── 筛选栏 ───────────────────────────────────────────────────────────── */
 
+/* 平铺（无卡片）：横向 padding 归零，控件与页头标题左对齐、贴容器内边缘。
+ * border-bottom 作为筛选区与列表之间的分隔线（对齐客户端曲库页的 Divider）。 */
 .dl-filter-bar {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    padding: 12px 20px;
+    padding: 12px 0;
     border-bottom: 1px solid var(--md-outline-variant);
 }
 
@@ -426,36 +429,39 @@ html.sl-mode-fullscreen {
     min-width: 180px;
 }
 
-.dl-filter-label {
-    display: block;
-    margin-bottom: 4px;
-    font-size: 12px;
-    color: var(--md-on-surface-variant);
-}
-
-.dl-toolbar {
+/* ── 顶栏动作区（Actions.vue）───────────────────────────────────────────────
+ * 操作按钮收进页头（tab/browser）或独立动作行（fullscreen），不再单占一行工具栏。
+ * fullscreen 无自绘页头，动作按钮落到这条右对齐的行，高度与页头一致以保持竖向节奏。 */
+.dl-action-row {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-    padding: 12px 20px;
+    justify-content: flex-end;
+    gap: 4px;
+    height: 56px;
+    margin-bottom: 8px;
 }
 
-.dl-toolbar-spacer {
-    flex: 1;
-    /* 下限避免无界约束解析出 Infinity（WebF flex 崩溃诱因之一） */
-    min-width: 8px;
+/*
+ * 约束⑧修补：宿主 filled `.btn`（下载按钮）是 inline-flex，落在页头/动作行这两个
+ * flex 容器里就是 flex 套 flex → 整个子树静默不绘制。降级 inline-block（内容排版由
+ * .dl-btn-inner 承担），与旧 .dl-toolbar>.btn 同理。图标按钮走 .dl-btn-icon
+ * （本就 inline-block）不受影响。
+ */
+.dl-appbar .btn,
+.dl-action-row .btn {
+    display: inline-block;
+    line-height: 40px;
 }
 
-.dl-toolbar-info {
-    font-size: 13px;
-    color: var(--md-on-surface-variant);
+.dl-appbar .btn > .dl-btn-inner,
+.dl-action-row .btn > .dl-btn-inner {
+    vertical-align: middle;
 }
 
 /*
  * 按钮内容层（SlButton 内）。cupertino 分支已删，现在全走宿主 .btn* HTML 分支。
  * ⚠️ **必须 inline-flex 不能 flex**（约束⑦）：写 flex 时按钮宽度变整个 viewport 宽，
- * 于是 .dl-toolbar 里每个按钮各占一行。
+ * 于是 flex 容器里每个按钮各占一行。
  */
 .dl-btn-inner {
     display: inline-flex;
@@ -475,21 +481,7 @@ html.sl-mode-fullscreen {
 }
 
 /*
- * 约束⑧修补：宿主 `.btn` 是 inline-flex，`.dl-toolbar` 是 flex → flex 套 flex。
- * 退成 inline-block（内容排版由 .dl-btn-inner 承担）。边框占 1px 时文字偏 1px，
- * 远好过整排按钮消失。
- */
-.dl-toolbar > .btn {
-    display: inline-block;
-    line-height: 40px;
-}
-
-.dl-toolbar > .btn > .dl-btn-inner {
-    vertical-align: middle;
-}
-
-/*
- * HTML 回落分支的 disabled。宿主 components.css 无 :disabled 规则，不补的话「下载选中」
+ * HTML 回落分支的 disabled。宿主 components.css 无 :disabled 规则，不补的话「下载」
  * 在未选歌时仍是可点的紫色实心。
  */
 .btn:disabled {
@@ -759,28 +751,59 @@ html[data-theme="dark"] .dl-status-orb {
         padding-bottom: calc(12px + var(--sl-safe-bottom, 0px));
     }
 
-    .dl-card-body,
-    .dl-filter-bar,
-    .dl-toolbar {
+    /* 只剩进度卡的 .dl-card-body 需要横向内边距；筛选栏平铺后横向 padding 已为 0。 */
+    .dl-card-body {
         padding-left: 12px;
         padding-right: 12px;
-    }
-
-    .dl-toolbar-info {
-        font-size: 12px;
     }
 
     .dl-appbar-title {
         font-size: 20px;
     }
 
-    /* 窄屏列表高度兜底：筛选栏 wrap 成两行(+72)、容器 pad 16→12(-8)：300+72-8 ≈ 364。
-     * fullscreen 再减去没画的页头 64 ≈ 300。权威值仍由 JS 实测覆盖。 */
+    /*
+     * 窄屏筛选区重排：歌单/艺术家/专辑三个下拉挤成一行（各 1/3 宽），搜索独占下一行。
+     * 宽屏（>600）维持原样（170px 一行四项），故只在这里覆盖。
+     *
+     * 列宽走**三等分**：`--dl-filter-col` 被触发按钮（.dl-filter-item）与下拉浮层
+     * （.dl-select-panel）同时复用，改这一处两者一起变、浮层仍与按钮同宽对齐。
+     * 用 `vw` 而非 `%`：`%` 在 WebF 会退回 shrink-to-fit/auto（见 .dl-select-panel
+     * 注释），`vw` 解析成具体 px、等价显式 width，满足约束⑦。
+     * chrome=42 的核算（平铺无卡片、筛选栏横向 padding 0）：容器左右 pad 12×2
+     * + 两个 gap 8×2 = 40，再 +2px 余量吸收 vw 的亚像素进位（否则三项相加会恰好比
+     * 内宽多 1~2px 而把第三项挤到换行）。
+     */
     :root {
-        --dl-list-h: clamp(240px, calc(100vh - 364px), 720px);
+        --dl-filter-col: calc((100vw - 42px) / 3);
+    }
+
+    .dl-filter-bar {
+        gap: 8px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+
+    /* 撤掉 140px 下限，否则三等分的 ~106px 放不下、又会退回每项独占一行。 */
+    .dl-filter-item {
+        min-width: 0;
+    }
+
+    /* 搜索占满整行内宽（100vw - 容器 pad 24）→ 比三选一行更宽，必然 wrap 到它们
+     * 下一行。flex:none 防它被塞进上一行。 */
+    .dl-filter-grow {
+        flex: none;
+        width: calc(100vw - 24px);
+        min-width: 0;
+    }
+
+    /* 窄屏列表高度兜底：顶部 chrome ≈ 页头/动作行64 + 筛选两行~108 + 容器 pad-top 12
+     * ≈ 184，加底部 gap ~12 → 减 210（略偏保守，首帧宁矮不溢出）。fullscreen 的动作行
+     * 与页头等高，chrome 相同 → 也用 210。权威值仍由 JS measureListHeight 实测覆盖。 */
+    :root {
+        --dl-list-h: clamp(240px, calc(100vh - 210px), 720px);
     }
 
     html.sl-mode-fullscreen {
-        --dl-list-h: clamp(240px, calc(100vh - 300px), 720px);
+        --dl-list-h: clamp(240px, calc(100vh - 210px), 720px);
     }
 }

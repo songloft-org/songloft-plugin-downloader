@@ -1,52 +1,40 @@
 <script setup>
 import AppBar from './AppBar.vue';
-import SectionHead from './SectionHead.vue';
 import ProgressCard from './ProgressCard.vue';
 import FilterBar from './FilterBar.vue';
-import Toolbar from './Toolbar.vue';
 import SongList from './SongList.vue';
-import SlButton from '../ui/SlButton.vue';
-import { goSettings } from '../store.js';
+import Actions from './Actions.vue';
 import { mode } from '../layout.js';
 
-// 主页：列表是页面主体，设置收进齿轮（跳独立设置页）。
+// 主页：列表是页面主体，操作全部收进顶栏（对齐客户端曲库/歌单详情页），
+// 不再有单独的工具栏行与「待下载歌曲」组标题 —— 把顶部尽量压扁，给列表让位。
 //
-// ── 齿轮的双落点 ──────────────────────────────────────────────────────────
+// ── 动作区的双落点（由 Actions.vue 承载，见其注释）──────────────────────────
 //
-// tab / browser 模式插件自绘页头，齿轮放页头右侧；
-// fullscreen 模式宿主已经有 AppBar（插件名 / 返回 / 关闭 / 在浏览器打开）且插件动不了它，
-// 于是插件不画页头 —— 那时齿轮落到「待下载歌曲」组标题行的右端。
-// 两处是同一个按钮，只是挂载位置由 mode 决定，保证三种模式下设置都进得去。
+// tab / browser 模式插件自绘页头，标题「歌曲下载」在左、动作区在右侧插槽；
+// fullscreen 模式宿主已有 AppBar（显示插件名）且插件动不了它，于是不画页头，
+// 动作区落到一条右对齐的独立动作行。两处是同一组 <Actions />。
 </script>
 
 <template>
   <div>
     <AppBar v-if="mode !== 'fullscreen'" title="歌曲下载">
-      <SlButton icon-only icon="settings" label="下载设置" @click="goSettings" />
+      <Actions />
     </AppBar>
+    <div v-else class="dl-action-row">
+      <Actions />
+    </div>
 
     <ProgressCard />
 
-    <SectionHead title="待下载歌曲">
-      <SlButton
-        v-if="mode === 'fullscreen'"
-        icon-only
-        icon="settings"
-        label="下载设置"
-        @click="goSettings"
-      />
-    </SectionHead>
-
     <!--
-      主体卡**不加 `overflow: hidden`**（因此也没照抄原生 SectionCard 的
-      clipBehavior: antiAlias）：筛选栏的下拉浮层是 position:absolute，祖先链上任何
-      overflow:hidden 都会把它在那个盒子边界整段切掉。而这里本来也没有需要裁剪的东西
-      —— 卡内子节点的背景都是透明的（继承卡片底色），唯一有独立底色的表头不在卡片
-      首尾边缘（上面还有筛选栏与工具栏）。详见 style.css 的 .dl-card 注释。
+      主体**平铺、不套卡片**（对齐客户端：筛选栏 + 分隔线 + 列表直接铺在页面 surface
+      上，无 surface-container 灰底圆角盒）。`.dl-body` 不给背景/边框/圆角，也刻意不加
+      `overflow: hidden`：筛选栏下拉浮层是 position:absolute，祖先链上任何
+      overflow:hidden 都会把它整段切掉。
     -->
-    <div class="card dl-card">
+    <div class="dl-body">
       <FilterBar />
-      <Toolbar />
       <SongList />
     </div>
   </div>
