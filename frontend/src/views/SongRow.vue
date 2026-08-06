@@ -2,7 +2,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import SlCheckbox from '../ui/SlCheckbox.vue';
 import SlIcon from '../ui/SlIcon.vue';
-import { loadCover } from '../covers.js';
+import { coverUrl, acquireCoverSlot } from '../covers.js';
 
 // 歌曲行：**统一的 ListTile 形态**（2026-08 重做，对齐主程序 SongTile）。
 // 不再有「宽屏多列表格 / 窄屏两层」双布局——所有宽度都是单行：
@@ -39,25 +39,41 @@ const statusText = computed(() => {
   return props.status.status === 'ok' ? '已下载' : '失败';
 });
 
-// 真实封面：带鉴权 fetch → data: URL（见 covers.js）。拿到前/失败时保持占位图标。
-// native ListView 回收时行会卸载，onUnmounted 里 cancel 退队；缓存命中则重挂载零请求。
+// 真实封面：带 access_token 的 endpoint URL，直接喂 `<img src>`（见 covers.js）。
+// 无封面（cover_url 为空）时为 ''，保持占位图标。
+//
+// 并发闸门：WebF 的 <img> 赋 src 即发真实请求且无并发上限，故先申请槽位、拿到才赋 src，
+// load/error 或行卸载时释放槽位（见 covers.js 头注释）。native ListView 回收会卸载本行，
+// onUnmounted 里释放；未拿到槽位则退队。
 const coverSrc = ref('');
-let coverReq = null;
+let slot = null;
+
+function releaseSlot() {
+  if (slot) {
+    slot.release();
+    slot = null;
+  }
+}
 
 onMounted(() => {
-  coverReq = loadCover(props.song);
-  coverReq.promise
-    .then((src) => {
-      if (src) coverSrc.value = src;
-    })
-    .catch(() => {
-      // 保持占位图标，不打断整行渲染
-    });
+  const url = coverUrl(props.song);
+  if (!url) return; // 无封面，不占槽位
+  slot = acquireCoverSlot();
+  slot.promise.then(() => {
+    coverSrc.value = url;
+  });
 });
 
-onUnmounted(() => {
-  if (coverReq) coverReq.cancel();
-});
+onUnmounted(releaseSlot);
+
+// 图片 load/error 后归还槽位，放行队列下一行。error（如 404）额外回落占位图标避免裂图。
+function onCoverLoad() {
+  releaseSlot();
+}
+function onCoverError() {
+  coverSrc.value = '';
+  releaseSlot();
+}
 </script>
 
 <template>
@@ -71,7 +87,7 @@ onUnmounted(() => {
 
     <!-- 封面：拿到真实封面显示 <img>，否则圆角方块 + 类型图标占位（对齐主程序 leading） -->
     <div class="dl-cover">
-      <img v-if="coverSrc" class="dl-cover-img" :src="coverSrc" :alt="song.title" />
+      <img v-if="coverSrc" class="dl-cover-img" :src="coverSrc" :alt="song.title" @load="onCoverLoad" @error="onCoverError" />
       <SlIcon v-else :name="coverIcon" />
     </div>
 
