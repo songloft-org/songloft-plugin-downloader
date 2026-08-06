@@ -44,7 +44,7 @@ import { mode } from '../layout.js';
       —— 卡内子节点的背景都是透明的（继承卡片底色），唯一有独立底色的表头不在卡片
       首尾边缘（上面还有筛选栏与工具栏）。详见 style.css 的 .dl-card 注释。
     -->
-    <div class="dl-card">
+    <div class="card dl-card">
       <FilterBar />
       <Toolbar />
       <SongList />

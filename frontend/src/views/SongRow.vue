@@ -1,23 +1,19 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import SlCheckbox from '../ui/SlCheckbox.vue';
-import { isWide } from '../layout.js';
+import SlIcon from '../ui/SlIcon.vue';
+import { loadCover } from '../covers.js';
 
-// 一行 = 用 flex 排的若干单元格。**响应式双布局**，照抄主程序
-// `song_list_tile.dart:51-62`：窄屏（<600）单行两层「标题 / 艺术家·专辑·来源」，
-// 宽屏多列表格。旧版那个 `min-width:620px` + `overflow-x:auto` 的横向滚动已删除
-// —— 主程序的歌曲列表从不横滚。
+// 歌曲行：**统一的 ListTile 形态**（2026-08 重做，对齐主程序 SongTile）。
+// 不再有「宽屏多列表格 / 窄屏两层」双布局——所有宽度都是单行：
+//   复选框 + 48 封面占位 + [标题 / 艺术家·专辑·来源] + 状态。
 //
-// **刻意用 flex 而不是 CSS Grid。** 旧版用双 grid 容器共享 grid-template-columns，
-// 那条路上踩到 WebF 的 grid `auto` 行高缺陷（在 min-content 宽度下测量子项高度，
-// CJK 每个字都是断行点 → 实测一行 281px，自然高只有 41px）。flex 行不经过那段测量逻辑。
-//
-// ⚠️ 窄屏那两层文字是**块流**（`.dl-row-title` / `.dl-row-sub` 都是 block），不是竖向
-// flex —— 约束 ⑧：flex 容器里再套 flex 容器会整个子树不绘制。这里的形状是
-// 「flex 行 → 块盒单元格 → 块流文本」，合规。所有 WidgetElement（复选框）也都被块盒
-// `.dl-cell` 包了一层，没有直接当 flex item（约束 ⑦）。
-//
-// 切结构用 v-if 而不是媒体查询 + display:none（约束 ④）。
+// ⚠️ WebF 约束（style.css 文件头）：
+//   · 横向 flex 行合规；竖排两层文本用**块流**（.dl-title/.dl-sub 都是 block），
+//     不是竖向 flex（约束 ⑧：flex 套 flex 整个子树不绘制）。
+//   · 复选框(WidgetElement)与封面被块盒包一层，不直接当 flex item（约束 ⑦）。
+//   · 标题/副标题 nowrap + ellipsis（约束 ①：可换行 CJK 在 min-content 下被按每字一行
+//     测量）。
 
 const props = defineProps({
   song: { type: Object, required: true },
@@ -28,56 +24,67 @@ const props = defineProps({
 const emit = defineEmits(['toggle']);
 
 const source = computed(() => props.song.plugin_entry_path || 'URL');
+
+// 封面占位图标：远程歌曲用 cloud，其余 music（对齐主程序 CoverImage.placeholderIcon）。
+const coverIcon = computed(() => (props.song.type === 'remote' ? 'cloud' : 'music'));
+
+// 副标题：艺术家 · 专辑 · 来源。空段过滤掉，避免前导 " · "（后端 artist 列
+// NOT NULL DEFAULT ''，拿到的是空串不是 null）。来源放最后，nowrap 从右截断先丢最次要的。
+const subtitle = computed(() =>
+  [props.song.artist, props.song.album, source.value].filter(Boolean).join(' · '),
+);
+
 const statusText = computed(() => {
   if (!props.status) return '';
   return props.status.status === 'ok' ? '已下载' : '失败';
 });
 
-// 窄屏副标题。空段直接过滤掉，避免出现前导的 " · "（同主程序 SongTile._subtitleText
-// 处理 artist 为空串的那段 —— 后端该列 NOT NULL DEFAULT ''，拿到的是空串不是 null）。
-// 来源放在最后：nowrap + ellipsis 从右侧截断，先丢掉的是最次要的信息。
-const subtitle = computed(() =>
-  [props.song.artist, props.song.album, source.value].filter(Boolean).join(' · '),
-);
+// 真实封面：带鉴权 fetch → data: URL（见 covers.js）。拿到前/失败时保持占位图标。
+// native ListView 回收时行会卸载，onUnmounted 里 cancel 退队；缓存命中则重挂载零请求。
+const coverSrc = ref('');
+let coverReq = null;
+
+onMounted(() => {
+  coverReq = loadCover(props.song);
+  coverReq.promise
+    .then((src) => {
+      if (src) coverSrc.value = src;
+    })
+    .catch(() => {
+      // 保持占位图标，不打断整行渲染
+    });
+});
+
+onUnmounted(() => {
+  if (coverReq) coverReq.cancel();
+});
 </script>
 
 <template>
   <div class="dl-row">
-    <div class="dl-cell dl-col-cb">
-      <SlCheckbox
-        :model-value="checked"
-        :aria-label="`选择 ${song.title}`"
-        @update:model-value="emit('toggle', song.id, $event)"
-      />
+    <SlCheckbox
+      class="dl-row-cb"
+      :model-value="checked"
+      :aria-label="`选择 ${song.title}`"
+      @update:model-value="emit('toggle', song.id, $event)"
+    />
+
+    <!-- 封面：拿到真实封面显示 <img>，否则圆角方块 + 类型图标占位（对齐主程序 leading） -->
+    <div class="dl-cover">
+      <img v-if="coverSrc" class="dl-cover-img" :src="coverSrc" :alt="song.title" />
+      <SlIcon v-else :name="coverIcon" />
     </div>
 
-    <!--
-      单元格保留 nowrap + ellipsis，长内容全文放 title 属性。
-      这不只是观感取舍：可换行的 CJK 文本在 WebF 的若干测量路径上会被算成
-      「每字一行」，nowrap 让 min-content == max-content，从根上避开那类问题。
-    -->
-    <template v-if="isWide">
-      <div class="dl-cell dl-col-title" :title="song.title">{{ song.title }}</div>
-      <div class="dl-cell dl-col-artist" :title="song.artist || ''">
-        {{ song.artist || '' }}
-      </div>
-      <div class="dl-cell dl-col-album" :title="song.album || ''">
-        {{ song.album || '' }}
-      </div>
-      <div class="dl-cell dl-col-source" :title="source">
-        <span class="dl-source-chip">{{ source }}</span>
-      </div>
-    </template>
-
-    <div v-else class="dl-cell dl-col-main">
-      <div class="dl-row-title" :title="song.title">{{ song.title }}</div>
-      <div class="dl-row-sub" :title="subtitle">{{ subtitle }}</div>
+    <!-- 标题 + 副标题，块流两层（约束 ⑧） -->
+    <div class="dl-main">
+      <div class="dl-title" :title="song.title">{{ song.title }}</div>
+      <div class="dl-sub" :title="subtitle">{{ subtitle }}</div>
     </div>
 
-    <div class="dl-cell dl-col-status">
-      <span v-if="statusText" :class="status.status === 'ok' ? 'dl-ok' : 'dl-fail'">
-        {{ statusText }}
-      </span>
-    </div>
+    <span
+      v-if="statusText"
+      class="dl-status-tag"
+      :class="status.status === 'ok' ? 'dl-ok' : 'dl-fail'"
+    >{{ statusText }}</span>
   </div>
 </template>

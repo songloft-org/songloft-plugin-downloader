@@ -62,7 +62,7 @@ function onIntervalCommit() {
       加载中完全无法区分（见 store.js 的 settingsError 注释）。
     -->
     <template v-if="state.settingsError">
-      <div class="dl-card">
+      <div class="card dl-card">
         <StatusView
           variant="error"
           title="读取设置失败"
@@ -74,7 +74,7 @@ function onIntervalCommit() {
     </template>
 
     <template v-else-if="!state.settingsLoaded">
-      <div class="dl-card">
+      <div class="card dl-card">
         <StatusView variant="loading" title="正在读取设置…" />
       </div>
     </template>
@@ -92,7 +92,7 @@ function onIntervalCommit() {
     -->
     <template v-else>
       <SectionHead title="路径与命名" />
-      <div class="dl-card">
+      <div class="card dl-card">
         <div class="dl-card-body">
           <div class="dl-field">
             <label class="dl-label">路径模板</label>
@@ -113,7 +113,7 @@ function onIntervalCommit() {
       </div>
 
       <SectionHead title="下载行为" />
-      <div class="dl-card">
+      <div class="card dl-card">
         <div class="dl-card-body">
           <div class="dl-field">
             <label class="dl-label">批量下载间隔（秒）</label>

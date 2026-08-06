@@ -60,34 +60,6 @@ export function applyMode() {
     return m;
 }
 
-// ── 宽窄断点 ───────────────────────────────────────────────────────────────
-//
-// 阈值对齐主程序的 `ResponsiveBreakpoints.tablet`（600），行为对齐
-// `song_list_tile.dart` 的 LayoutBuilder：窄屏单行两层，宽屏多列表格。
-//
-// **刻意用 JS 断点 + v-if 切结构，而不是媒体查询。** 媒体查询切结构必然依赖
-// `display:none`，而那违反约束 ④（WebF 下 display:none 的元素仍会挂一个 0 尺寸的
-// RenderConstrainedBox）。媒体查询在本插件只用于纯样式微调（padding / 字号 / 列表高度）。
-const WIDE_MIN_WIDTH = 600;
-
-// 初值在**模块加载时**就算准，不等 installLayout()（它在 onMounted 里跑，已经晚了一帧）。
-// 写死 true 的话窄屏首帧会先渲染出宽屏那套六列表格再切回来 —— 在 WebF 的异步渲染下
-// 那一帧是真会被绘制出来的。`window.innerWidth` 不依赖任何宿主注入，此刻读就是准的。
-function measureWide() {
-    try {
-        return window.innerWidth >= WIDE_MIN_WIDTH;
-    } catch (e) {
-        // 读不到视口宽度时按宽屏处理：表格布局信息更全，窄屏下最多是挤一点
-        return true;
-    }
-}
-
-export const isWide = ref(measureWide());
-
-function syncWide() {
-    isWide.value = measureWide();
-}
-
 // ── 列表可用高度 ───────────────────────────────────────────────────────────
 //
 // 约束 ⑤ 要求 `<webf-list-view shrink-wrap="false">` 有**确定高度**（只能是 `height`，
@@ -165,9 +137,7 @@ export function onResize(fn) {
 export function installLayout() {
     if (installed) return;
     installed = true;
-    syncWide();
     window.addEventListener('resize', () => {
-        syncWide();
         for (let i = 0; i < resizeHooks.length; i++) {
             try {
                 resizeHooks[i]();

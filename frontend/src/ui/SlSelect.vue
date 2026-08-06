@@ -58,9 +58,14 @@
 //
 // 非 WebF 路径（浏览器 / 系统 WebView / Web iframe / 拿不到 WebF 渲染面的平台）
 // 继续用原生 `<select>` —— 在真浏览器里它完全正常，而且是无障碍与键盘操作最好的形态。
+//
+// ⚠️ 闸门是 `isWebFRuntime` 而**不是** `useNativeUI`（cupertino 是否注册）：`<select>`
+// 在**所有** WebF 上都坏（缺 options/selectedOptions，值传不回），不只 cupertino 客户端。
+// 用 useNativeUI 当闸门会让「WebF + 老客户端（无 cupertino）」落到原生 `<select>` 分支
+// 而踩坑——那正是本轮修掉的一个潜在 bug。
 
 import { computed, onUnmounted } from 'vue';
-import { useNativeUI } from '../engine.js';
+import { isWebFRuntime } from '../engine.js';
 import SlButton from './SlButton.vue';
 import { openToken, nextSelectToken } from './select-open-state.js';
 
@@ -143,7 +148,7 @@ function onChange(e) {
 </script>
 
 <template>
-  <div v-if="useNativeUI" class="dl-select-wrap">
+  <div v-if="isWebFRuntime" class="dl-select-wrap">
     <SlButton
       class="dl-select-btn"
       variant="tinted"

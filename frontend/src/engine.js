@@ -88,6 +88,6 @@ if (typeof console !== 'undefined' && console.log) {
       useNativeUI +
       ' nativeListView=' +
       useNativeListView +
-      ' build=unctrl-overlay',
+      ' build=select-boxed',
   );
 }
