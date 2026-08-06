@@ -158,8 +158,10 @@ document.createElement('flutter-cupertino-switch').checked !== undefined
    `frontend/src/ui/native-props.js`。
 
 另外：输入框的值属性叫 **`val`** 不是 `value`，且它是**受控**的（内部
-`_controller.text != val` 就整段替换文本并把光标推到末尾），所以数字字段在 store 里
-存字符串、提交时才 `parseInt`，不能在回写路径上做类型转换。
+`_controller.text != val` 就整段替换文本并把光标推到末尾）——对已挂载的输入框回写 val
+会触发白屏崩溃链（下表倒数第二条），所以本插件原生分支按**非受控**用：挂载时给一次
+初值，之后只读事件不回写（`ui/SlInput.vue`）。数字字段在 store 里存字符串、提交时才
+`parseInt`。
 
 #### 内容与装饰的坑（真机才暴露的）
 
@@ -245,7 +247,8 @@ document.createElement('flutter-cupertino-switch').checked !== undefined
 | **`width: 100%` 在 shrink-to-fit 的绝对定位父盒里解不出来**，静默退回内容宽度 —— 表现是下拉面板里选中行的背景只染了文字那么宽 | 让**父盒**的宽度先变确定：`position:absolute` 上同时写 `left:0` + `right:0` + `width:auto`，WebF 会按 CSS abs-non-replaced 算法从包含块 padding box 解出宽度（`css/render_style.dart:3203`）。之后子项用 `width:auto` 的块级 fill-available 撑满即可，**不要**再写百分比 |
 | **浮层的祖先链上不能有 `overflow: hidden`** —— 会把 `position:absolute` 的下拉面板在那个盒子边界整段切掉 | `.dl-card` 刻意不写 overflow（留空规则 + 注释防止加回来）；面板另加 `max-height` + `overflow-y` 作降级保护 |
 | **⚠️ flex 容器里再套 flex 容器 → 整个子树一个像素都不画**（同上那个 base size 缺陷的另一副面孔，但后果严重得多）。机制：Flutter 的 `RenderObject._paintWithContext` 开头就是 `if (_needsLayout) return;`，**停在 needsLayout 的 render object 被静默跳过绘制**；WebF 的 flex 用「以放松约束试排一遍」测 base size，嵌套 flex 子项（`RenderFlexLayout`）不在它 §9.2 补丁覆盖范围内。**无异常、无日志**，且 DOM 与 `getBoundingClientRect()` 全部正常，光看结构完全查不出来 | 见 `style.css` 约束 ⑧：**竖向堆叠一律用块流**（`display:block` + `margin`），不用 `flex-direction:column` + `gap` —— 两者视觉等价，但块流不碰那套测量。横向 flex 行（`.dl-filter-bar` / `.dl-toolbar` / `.dl-switch-row` / `.dl-row`）保留，问题从来在**子节点**也是 flex 容器 |
-| **受控文本框被外部改写会让整页白屏**（debug 构建）：`val` 变化 → `RenderEditable.text=` → `markNeedsLayout`，而同一帧 MouseTracker 的 hit test 打到同一个 `RenderEditable` → `Text layout not available` → `!_debugDuringDeviceUpdate` 每帧刷屏。**触发要求鼠标正停在页面上**，所以截图脚本永远撞不到 | 输入框等 `state.settingsLoaded` 后再挂载（首次赋值走 mount 不走 update），见 `views/SettingsCard.vue`。**无法根除**：`onIntervalCommit` 那种「纠正显示值」仍会触发。换 HTML `<input>` 也绕不开——WebF 的 `<input>` 底下同样是 Flutter `TextField` |
+| **受控文本框被外部改写会让整页白屏**（debug 构建）：`val` 变化 → `RenderEditable.text=` → `markNeedsLayout`，而同一帧 MouseTracker 的 hit test 打到同一个 `RenderEditable` → `Text layout not available` → 异常把 `_debugDuringDeviceUpdate` 永久置位 → 每帧刷 `mouse_tracker.dart:199` 断言。**触发要求鼠标正停在页面上**，所以截图脚本永远撞不到 | `ui/SlInput.vue` 原生分支**非受控**：`val` 只在挂载时给一次初值，之后只读 `input` 事件、永不回写；外部改显示值（间隔规范化、切歌单清关键字）改 `:key` **重挂载**，新值走 mount 不走 update。输入框仍等 `state.settingsLoaded` 后再挂载（非受控下挂载初值是唯一一次赋值机会）。换 HTML `<input>` 绕不开——WebF 的 `<input>` 底下同样是 Flutter `TextField` |
+| **大规模 DOM 拆除 + 鼠标停在页面上 = 同一类白屏的另一张脸**（debug 构建，2026-08-05 实测）：v-if 换页把整张主页（含 `<webf-list-view>` 与全部行）同一帧卸载，WebF 留下已 dispose 却仍被引用的 render object —— paint 访问到（`object.dart` 的 `!_debugDisposed`）、样式对象查不到盒子（`transform.dart` 的 `hasRenderBox()`）、MouseTracker hit test 打到它们，异常同样把 `_debugDuringDeviceUpdate` 置位 → 每帧刷断言 | 设置页改为**全屏覆盖层**（`.dl-page-overlay`），主页始终挂载：打开设置是纯挂载（无拆除），关闭只卸载设置页几件控件（与下拉面板开合同规模，从未出事）。见 `App.vue` 注释 |
 
 #### 相比上一版恢复的两处
 

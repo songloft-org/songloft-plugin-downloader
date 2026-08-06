@@ -20,10 +20,16 @@ const emit = defineEmits(['update:modelValue']);
  * 是蓝色、webview 下是紫色的原因）。CupertinoSwitch 也不读 renderStyle，所以这一个
  * 属性不像按钮那样能用 CSS 绕过去。
  *
- * 取值优先读 CSS 变量（宿主改色板时自动跟随），WebF 的 CSSOM 读不到自定义属性时
- * 回落到 common.css 里的两个字面值。**主题切换要重算** —— 值本身是随主题变的。
+ * 取值三级回落：
+ *   ① `SongloftPlugin.getColorScheme().primary` —— **宿主下推的真实 ColorScheme**，
+ *      含用户自定义 ThemePack。这是唯一在 WebF 下也拿得到真值的途径。
+ *   ② `getComputedStyle` 读 `--md-primary` —— 只在浏览器 / WebView 下有用（WebF 对
+ *      **自定义**属性一律返回空串），留着是为了老客户端还没下推色板时也别退到字面值。
+ *   ③ 字面值 —— 与 common.css 的静态兜底一致（由默认 seed #415F91 导出）。
+ *
+ * **主题切换与色板下推都要重算** —— 值本身是随主题变的。
  */
-const PRIMARY_FALLBACK = { light: '#595b94', dark: '#C7BFFF' };
+const PRIMARY_FALLBACK = { light: '#415F91', dark: '#AAC7FF' };
 
 function currentTheme() {
   const attr = document.documentElement.getAttribute('data-theme');
@@ -32,29 +38,49 @@ function currentTheme() {
 
 function readPrimaryHex() {
   try {
+    const P = window.SongloftPlugin;
+    if (P && typeof P.getColorScheme === 'function') {
+      const cs = P.getColorScheme();
+      if (cs && typeof cs.primary === 'string' && cs.primary.charAt(0) === '#') {
+        return cs.primary;
+      }
+    }
+  } catch (e) {
+    // 老客户端的 common.js 没有这个 API，继续往下回落
+  }
+  try {
     const raw = getComputedStyle(document.documentElement).getPropertyValue(
       '--md-primary',
     );
     const hex = (raw || '').trim();
     if (hex.charAt(0) === '#') return hex;
   } catch (e) {
-    // WebF 的 CSSOM 未必支持读自定义属性，落到下面的字面值
+    // WebF 的 CSSOM 读不到自定义属性，落到下面的字面值
   }
   return PRIMARY_FALLBACK[currentTheme()];
 }
 
 const activeColor = ref(readPrimaryHex());
 
-// 宿主在主题变化时派发这个事件（common.js 的主题桥），见主仓 AGENTS.md 的 JS 插件一节
 function onThemeChange() {
   activeColor.value = readPrimaryHex();
 }
 
+// ⚠️ **必须挂在 `document` 上，不是 `window`。** common.js 派发的是
+// `document.dispatchEvent(new CustomEvent('songloft-theme-change', {detail}))` ——
+// 没有 `bubbles: true`，所以**不会**冒泡到 window。以前这里监听的是 window，
+// 于是开关主色在切主题时从未更新过（静默失效，只有对比截图才看得出来）。
+//
+// 两个事件都听：色板下推（`songloft-color-scheme-change`）保证在
+// `songloft-theme-change` **之前**落地，所以只听后者其实也够 —— 但换主题包时
+// 亮暗没变、只有色板变，那种情况只有前者会派发。
 onMounted(() => {
-  window.addEventListener('songloft-theme-change', onThemeChange);
+  document.addEventListener('songloft-theme-change', onThemeChange);
+  document.addEventListener('songloft-color-scheme-change', onThemeChange);
 });
 onUnmounted(() => {
-  window.removeEventListener('songloft-theme-change', onThemeChange);
+  document.removeEventListener('songloft-theme-change', onThemeChange);
+  document.removeEventListener('songloft-color-scheme-change', onThemeChange);
 });
 
 const el = ref(null);

@@ -5,10 +5,23 @@ import { bindNativeProps } from './native-props.js';
 
 const props = defineProps({
   /**
-   * 值。**必须是字符串**，不要传数字 —— cupertino input 是受控的
-   * （build() 里 `_controller.text != val` 就整段替换文本并把光标推到末尾），
-   * 回写时做类型转换会在用户输入的中间态就改写内容、光标跳走。
-   * 数字字段请在 store 里存字符串、提交时才 parseInt（见 store.js）。
+   * 值。**必须是字符串**，不要传数字。
+   *
+   * ⚠️ 两条渲染分支对它的用法**不对称**：
+   * - HTML 分支：受控（`:value="modelValue"`）。浏览器 / WebView 没有下面这条
+   *   崩溃链，外部改值直接反映到输入框是正常行为。
+   * - 原生分支：**只作挂载初值，挂载后永不回写**（非受控）。
+   *   `<flutter-cupertino-input>` 是受控 widget（webf_cupertino_ui 的 build() 里
+   *   `_controller.text != val` 就整段替换文本并把光标推到末尾），任何落到已挂载
+   *   元素上的 `val` 回写都会走 `_Editable.updateRenderObject` → `RenderEditable.text=`
+   *   → `markNeedsLayout`；若同一帧 `MouseTracker.updateAllDevices` 的 hit test 打到它
+   *   （鼠标正停在输入框上），`getClosestGlyphForOffset` 撞 `Text layout not available`
+   *   断言，异常把 `_debugDuringDeviceUpdate` 永久置位，之后**每帧**刷
+   *   `mouse_tracker.dart:199` 断言、帧循环烂掉、整页白屏
+   *   （2026-08-05 实测、栈已确证；机制见主仓 docs/webf/handoff.md 第 25 条）。
+   *   外部确实需要改显示值时（间隔规范化 -4 → 0、切歌单清空关键字），调用方改
+   *   `:key` 让本组件**重挂载**——新值走 mount（createState 时 controller 即正确），
+   *   而不是 update。数字字段请在 store 里存字符串、提交时才 parseInt（见 store.js）。
    */
   modelValue: { type: String, default: '' },
   placeholder: { type: String, default: '' },
@@ -19,6 +32,13 @@ const props = defineProps({
   ariaLabel: { type: String, default: '' },
 });
 const emit = defineEmits(['update:modelValue', 'change']);
+
+// 挂载初值快照。**刻意不是响应式**：只在 setup 时取一次，之后永不更新 ——
+// 这正是「非受控」的实现：模板把它绑成常量，Vue 每次 patch 都比出「没变」，
+// 于是永远不会有第二次 `val` 写入落到已挂载的原生元素上，上面那条崩溃链
+// 从构造上消失。输入事件照常 emit，store 仍是实时的（保存逻辑读 store）。
+// 重挂载（调用方换 `:key`）会重跑 setup、重新快照 —— 那是外部改值的唯一安全通道。
+const initialValue = props.modelValue;
 
 const el = ref(null);
 bindNativeProps(el, () => ({
@@ -37,16 +57,16 @@ function onHtmlInput(e) {
 
 <template>
   <!--
-    val 是字符串属性，两条绑定路径（prop / attr）都会 toString()，所以模板绑定安全，
-    不必走 bindNativeProps。注意属性名是 `val` 而不是 `value`。
-    cupertino input **没有 change 事件**，只有 input/submit/blur —— 「change 即保存」
-    的语义由调用方在 blur 或 input 去抖后自己触发（见 SettingsCard.vue）。
+    原生分支：`:val` 绑的是**常量快照** initialValue 而不是 modelValue，理由见上。
+    属性名是 `val` 而不是 `value`。cupertino input **没有 change 事件**，
+    只有 input/submit/blur —— 「change 即保存」的语义由调用方在 blur 或
+    input 去抖后自己触发（见 SettingsPage.vue）。
   -->
   <flutter-cupertino-input
     v-if="useNativeUI"
     ref="el"
     class="dl-input-native"
-    :val="modelValue"
+    :val="initialValue"
     :placeholder="placeholder"
     :type="type"
     @input="onNativeInput"

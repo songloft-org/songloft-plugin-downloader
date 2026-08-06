@@ -17,6 +17,10 @@ const MAP = {
   // 已在 map 里核对过；Material Symbols 侧 'expand_more' 由宿主那份 315 KB 的
   // 完整可变字体提供（不是 subset），不会退化成字面文字。
   chevron: ['chevron_down', 'expand_more'],
+  // 设置页页头的返回箭头。cupertino 侧 'chevron_left' 已在 map 里核对过。
+  back: ['chevron_left', 'arrow_back'],
+  // 错误态。'exclamationmark_circle' 同样已核对。
+  error: ['exclamationmark_circle', 'error_outline'],
 };
 
 const props = defineProps({

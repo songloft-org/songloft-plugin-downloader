@@ -33,6 +33,14 @@ const props = defineProps({
    * 只渲染第一个子节点，结构必须由本组件独占。
    */
   trailingIcon: { type: String, default: '' },
+  /**
+   * 只画图标、不画文字（页头的齿轮 / 返回箭头）。
+   *
+   * `label` 仍然**必填**：它此时当 `aria-label` 用。图标按钮没有可读文字，
+   * 不给无障碍名就是个空按钮 —— 宿主 common.js 的 `hideDecorationIcons()` 还会
+   * 给图标补 `aria-hidden="true"`，那样连图标的隐含语义都没了。
+   */
+  iconOnly: { type: Boolean, default: false },
 });
 
 const el = ref(null);
@@ -77,8 +85,19 @@ const NATIVE_CLASS = {
 // 用类而不是 `[disabled]` 属性选择器：disabled 是命令式赋的 **JS 属性**（见 native-props.js），
 // 不会反映到 HTML 属性上，属性选择器匹配不到。
 const nativeClass = computed(() => {
-  const base = NATIVE_CLASS[props.variant] || NATIVE_CLASS.plain;
+  let base = NATIVE_CLASS[props.variant] || NATIVE_CLASS.plain;
+  // 图标按钮要方形、无左右 padding。WebF 侧的 padding 会被应用两次（见
+  // .dl-btn-native 的注释），所以这个类里的值同样写目标值的一半。
+  if (props.iconOnly) base += ' dl-btn-native-icon';
   return props.disabled ? base + ' dl-btn-native-disabled' : base;
+});
+
+const fallbackClass = computed(() => {
+  // 图标按钮**刻意不带宿主的 `.btn`**：那个类是 `display:inline-flex`，而图标按钮
+  // 的落点（页头 / 组标题行）都是 flex 容器 —— flex 子项自己也是 flex 容器会触发
+  // 约束 ⑧（整个子树一个像素都不画）。`.dl-btn-icon` 是 inline-block，安全。
+  if (props.iconOnly) return 'dl-btn-icon';
+  return FALLBACK_CLASS[props.variant] || FALLBACK_CLASS.plain;
 });
 </script>
 
@@ -113,20 +132,22 @@ const nativeClass = computed(() => {
     v-if="useNativeUI"
     ref="el"
     :class="nativeClass"
+    :aria-label="label"
   ><span class="dl-btn-inner">
       <SlIcon v-if="icon" :name="icon" />
-      <span class="dl-btn-label">{{ label }}</span>
+      <span v-if="!iconOnly" class="dl-btn-label">{{ label }}</span>
       <SlIcon v-if="trailingIcon" :name="trailingIcon" />
     </span></flutter-cupertino-button>
   <button
     v-else
     type="button"
-    :class="FALLBACK_CLASS[variant] || FALLBACK_CLASS.plain"
+    :class="fallbackClass"
     :disabled="disabled"
+    :aria-label="label"
   >
     <span class="dl-btn-inner">
       <SlIcon v-if="icon" :name="icon" />
-      <span class="dl-btn-label">{{ label }}</span>
+      <span v-if="!iconOnly" class="dl-btn-label">{{ label }}</span>
       <SlIcon v-if="trailingIcon" :name="trailingIcon" />
     </span>
   </button>

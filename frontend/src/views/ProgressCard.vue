@@ -17,7 +17,7 @@ const pct = computed(() => {
     display:none 的元素在 WebF 里仍会挂一个 0 尺寸的 RenderConstrainedBox。
     条件渲染没有这两个问题。
   -->
-  <div v-if="state.progress" class="card dl-card">
+  <div v-if="state.progress" class="dl-card">
     <div class="dl-card-body">
       <div class="dl-prog-header">
         <span>批量下载中...</span>

@@ -1,5 +1,6 @@
 import { reactive, computed, ref, watch } from 'vue';
 import * as api from './api.js';
+import { openToken } from './ui/select-open-state.js';
 
 // 单页应用、单份全局状态、无跨路由复用 —— 刻意不引 Pinia，一个模块级 reactive 够了。
 
@@ -8,27 +9,50 @@ export const DEFAULT_TEMPLATE = 'downloads/{artist}-{album}/{title}';
 export const state = reactive({
   settings: {
     pathTemplate: '',
-    // 刻意存**字符串**而不是数字：这个值双向绑在输入框上，而 webf-ui 的
-    // <flutter-cupertino-input> 是受控的（build() 里 `_controller.text != val`
-    // 就整段替换文本并把光标塞到末尾）。若我们在回写时做 Number() 转换，
-    // 用户输入 "1" 的中间态就会被改写、光标跳到末尾。提交时才 parseInt。
+    // 刻意存**字符串**而不是数字：这个值绑在输入框上，若在回写时做 Number() 转换，
+    // 用户输入 "1" 的中间态就会被改写。提交时才 parseInt。
     downloadInterval: '0',
     embedMetadata: true,
     autoDownload: false,
   },
   /**
-   * 设置是否已从服务端读回。**用途不是显示 loading，而是规避一个会让整页白屏的崩溃**：
-   * `<flutter-cupertino-input>` 是受控的，`val` 变化会走 Flutter 的
-   * `_Editable.updateRenderObject` → `RenderEditable.text=` → `markNeedsLayout`；
-   * 若那一帧鼠标正停在插件页上，MouseTracker 的 hit test 会对同一个
-   * RenderEditable 调 `getClosestGlyphForOffset`，撞上 `Text layout not available`
-   * 断言，随后 `!_debugDuringDeviceUpdate` 无限刷屏、帧循环烂掉（2026-08-05 实测）。
-   * 让输入框**等值到齐后再挂载**，首次赋值就走 mount 而不是 update，消掉这条路径。
-   * 详见 views/SettingsCard.vue 的注释与主仓 docs/webf/handoff.md。
+   * 设置是否已从服务端读回。**用途不是显示 loading，而是非受控输入的正确性前提**：
+   * WebF 原生输入挂载后**永不回写** val（回写会走 `RenderEditable.text=` →
+   * `markNeedsLayout`，与同帧 MouseTracker 的 hit test 相撞出 `Text layout not
+   * available` → `!_debugDuringDeviceUpdate` 每帧刷屏、整页白屏，2026-08-05 实测，
+   * 机制见主仓 docs/webf/handoff.md 第 25 条）。挂载初值是唯一一次赋值机会 ——
+   * 所以必须等值到齐再挂载，否则输入框会永久显示空值。
+   * 详见 views/SettingsPage.vue 与 ui/SlInput.vue 的注释。
    */
   settingsLoaded: false,
+  /**
+   * 设置读取失败。与 `settingsLoaded` 是**两个**独立的标志，不能合并成三态枚举：
+   * `settingsLoaded` 的语义是「值已到齐、可以挂载输入了」，它必须保持
+   * 「只有真正拿到值才为 true」。以前失败时只是 `return`，于是 `settingsLoaded`
+   * 永远 false → 两个输入框**永不挂载**，用户看到的是两块空白，且与「还在加载」
+   * 完全无法区分。加这个字段就是为了把那个死角显式化成「失败 + 重试」。
+   */
+  settingsError: null,
   playlists: [],
   songs: [],
+  /** 歌曲列表是否在首次加载中。用于区分「还没加载」与「真的没有歌」。 */
+  songsLoading: true,
+  /** 歌曲列表加载失败的消息。null = 没失败。 */
+  songsError: null,
+  /**
+   * 插件内的两级页面。`'main'` 列表主体 / `'settings'` 独立设置页。
+   *
+   * 设置页是**全屏覆盖层**，主页始终挂载（App.vue 注释：v-if 换页的大规模拆除会撞
+   * WebF 的 dispose 竞态 → 整页白屏）。覆盖层由 SettingsPage 的 v-if 挂卸，
+   * 打开 = 纯挂载、关闭 = 小规模拆除，两条路径都已被实证安全。
+   *
+   * ⚠️ **刻意不用 `history.pushState` 表达这一层**。WebF 不实现 SPA history 路由，
+   * 而宿主的 requestBack 是按 `history.length > 1` 判断「返回键已被消费」的 ——
+   * pushState 之后宿主以为消费了、WebF 又不 fire popstate，页面毫无变化，
+   * **返回键变成死键**。改用宿主提供的 `SongloftPlugin.onHostBack` 钩子
+   * （见 App.vue），语义准确且无副作用。
+   */
+  page: 'main',
   /** songId -> {song_id, status, ...}，来自批量下载进度里的 results */
   dlStatus: {},
   filter: {
@@ -45,6 +69,14 @@ export const state = reactive({
 // Set 在 Vue 3 里响应式是「方法级」的：add/delete 会触发依赖它的 computed，
 // 但为了让模板里的 selected.has(id) 稳定地被追踪，统一用 ref + 整体替换。
 export const selected = ref(new Set());
+
+/**
+ * 关键字输入框的**重挂载代数**。WebF 原生输入是非受控的（ui/SlInput.vue 注释：
+ * 挂载后永不回写 val，回写会触发 RenderEditable 白屏崩溃链），所以「切歌单时清空
+ * 关键字」这种**外部清空**没法靠 store → 绑定刷回去，只能让 FilterBar 的关键字
+ * 输入框 `:key` 挂这个代数、清空时 +1，带着空值重挂载（mount 路径安全）。
+ */
+export const keywordGen = ref(0);
 
 function replaceSelected(mutate) {
   const next = new Set(selected.value);
@@ -123,6 +155,24 @@ export const allVisibleSelected = computed(() => {
 
 // ── actions ────────────────────────────────────────────────────────────────
 
+/**
+ * 切页。切之前先收起可能展开的下拉浮层：设置覆盖层会把主页整个盖住，
+ * 留着展开的面板在底下，返回主页时会看到一个无主的悬浮面板；且 `openToken`
+ * 是**模块级**互斥标记，不清就会继续挡其它下拉的展开。
+ */
+function navigate(page) {
+  openToken.value = null;
+  state.page = page;
+}
+
+export function goSettings() {
+  navigate('settings');
+}
+
+export function goMain() {
+  navigate('main');
+}
+
 export function showSnackbar(text, type) {
   state.snackbar = { text, type };
   setTimeout(() => {
@@ -132,8 +182,14 @@ export function showSnackbar(text, type) {
 }
 
 export async function loadSettings() {
+  state.settingsError = null;
   const r = await api.fetchSettings();
-  if (!r) return;
+  // 宿主的 apiGet 已经吞掉网络错误并返回 null，所以 null 就是「失败」。
+  // 以前这里是裸 `return`，`settingsLoaded` 于是永远 false、输入框永不挂载（见字段注释）。
+  if (!r) {
+    state.settingsError = '读取设置失败，请检查网络后重试';
+    return;
+  }
   state.settings.pathTemplate = r.path_template || '';
   state.settings.embedMetadata = r.embed_metadata !== false;
   state.settings.downloadInterval = String(r.download_interval ?? 0);
@@ -197,8 +253,18 @@ export async function loadPlaylists() {
 }
 
 export async function loadSongs() {
+  state.songsLoading = true;
+  state.songsError = null;
   const r = await api.fetchSongs(state.filter.playlistId);
-  state.songs = r && r.songs ? r.songs : [];
+  // null = 请求失败（宿主的 apiGet 吞了错误）。区分「失败」与「真的没有歌」，
+  // 否则断网时用户看到的是「没有可下载的网络歌曲」这种误导性空态。
+  if (!r) {
+    state.songsError = '加载歌曲失败，请检查网络后重试';
+    state.songsLoading = false;
+    return;
+  }
+  state.songs = r.songs || [];
+  state.songsLoading = false;
   selected.value = new Set();
   // 选项集合变了，把已失效的筛选值清掉（旧版 rebuildFacets 的同一段语义）
   if (!artistOptions.value.includes(state.filter.artist)) {
@@ -230,7 +296,11 @@ export async function changePlaylist(id) {
   // 换歌单时清掉客户端筛选：选项集合整体变了，留着旧值只会得到空列表
   state.filter.artist = '';
   state.filter.album = '';
-  state.filter.keyword = '';
+  if (state.filter.keyword !== '') {
+    state.filter.keyword = '';
+    // 原生输入是非受控的，清空必须靠重挂载才能反映到 DOM（见 keywordGen 注释）
+    keywordGen.value++;
+  }
   await loadSongs();
 }
 
