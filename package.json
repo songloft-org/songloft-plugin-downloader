@@ -1,6 +1,6 @@
 {
   "name": "songloft-plugin-downloader",
-  "version": "2026.8.6",
+  "version": "2026.8.7",
   "private": true,
   "scripts": {
     "build": "songloft-plugin build",
