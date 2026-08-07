@@ -72,15 +72,16 @@ html.sl-mode-fullscreen {
 
 /* ── 布局 ─────────────────────────────────────────────────────────────── */
 
-/* 800 与主程序宽屏详情区的 maxWidth: 800 对齐（settings_master_detail.dart）。
- * 竖向堆叠靠 .dl-card 的 margin-bottom（约束 ⑧，不用 flex column + gap）。
- * padding-bottom 被 layout.js 的 pageBottomGap() 用 getComputedStyle 读解析值参与列表
- * 高度核算，改动请同步看那边。 */
+/* 独立页沿用主程序详情区的 maxWidth: 800（settings_master_detail.dart）。
+ * 宿主 Tab 的宽屏主页在下方按曲库一样铺满内容区；竖向堆叠靠 .dl-card 的
+ * margin-bottom（约束 ⑧，不用 flex column + gap）。padding-bottom 被 layout.js 的
+ * pageBottomGap() 用 getComputedStyle 读解析值参与列表高度核算，改动请同步看那边。 */
 .dl-container {
     max-width: 800px;
     margin: 0 auto;
     padding: 16px;
     padding-bottom: calc(16px + var(--sl-safe-bottom, 0px));
+    font-family: 'Roboto', 'NotoSansSC', 'Noto Sans SC', system-ui, sans-serif;
 }
 
 /*
@@ -99,11 +100,36 @@ html.sl-mode-fullscreen {
     overflow-y: auto;
 }
 
+/*
+ * 设置页固定页头。sticky 在 WebF 下不生效，所以使用 fixed；不用 transform，规避
+ * fixed + transform 的引擎缺陷。宿主 Tab 已消费顶部安全区，此时 --sl-safe-top 为 0；
+ * 独立浏览器存在刘海时则从安全区下方开始。
+ */
+.dl-settings-appbar {
+    position: fixed;
+    top: var(--sl-safe-top, 0px);
+    right: 0;
+    left: 0;
+    z-index: 110;
+    height: 56px;
+    background: var(--md-surface);
+}
+
+.dl-settings-appbar-inner {
+    max-width: 800px;
+    height: 56px;
+    margin: 0 auto;
+    padding: 0 16px;
+    font-family: 'Roboto', 'NotoSansSC', 'Noto Sans SC', system-ui, sans-serif;
+}
+
 .dl-overlay-body {
     max-width: 800px;
     margin: 0 auto;
     padding: 16px;
+    padding-top: calc(72px + var(--sl-safe-top, 0px));
     padding-bottom: calc(16px + var(--sl-safe-bottom, 0px));
+    font-family: 'Roboto', 'NotoSansSC', 'Noto Sans SC', system-ui, sans-serif;
 }
 
 /*
@@ -131,9 +157,9 @@ html.sl-mode-fullscreen {
 .dl-appbar {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 0;
     height: 56px;
-    margin-bottom: 8px;
+    margin-bottom: 0;
 }
 
 .dl-appbar-title {
@@ -141,7 +167,9 @@ html.sl-mode-fullscreen {
     flex: 1;
     min-width: 0;
     font-size: 22px;
-    font-weight: 500;
+    font-weight: 400;
+    line-height: 28px;
+    letter-spacing: 0;
     color: var(--md-on-surface);
     white-space: nowrap; /* 约束① */
     overflow: hidden;
@@ -365,14 +393,16 @@ html.sl-mode-fullscreen {
 
 .dl-switch-title {
     display: block;
-    font-size: 14px;
+    font-size: 16px;
+    line-height: 24px;
     color: var(--md-on-surface);
 }
 
 .dl-switch-sub {
     display: block;
     margin-top: 2px;
-    font-size: 12px;
+    font-size: 14px;
+    line-height: 20px;
     color: var(--md-on-surface-variant);
 }
 
@@ -533,6 +563,11 @@ html.sl-mode-fullscreen {
     vertical-align: middle;
 }
 
+/* AppBar actions use the same 24px Material icon optical size as Flutter IconButton. */
+.dl-appbar .dl-btn-icon .dl-icon {
+    font-size: 24px;
+}
+
 .dl-icon {
     font-size: 18px;
     line-height: 1;
@@ -559,8 +594,35 @@ html.sl-mode-fullscreen {
     background: var(--md-surface-container-high);
 }
 
-.dl-row-cb {
+.dl-row-checkbox {
+    display: block;
     flex-shrink: 0;
+    width: 32px;
+    height: 48px;
+    line-height: 48px;
+}
+
+.dl-row-cb {
+    display: inline-block;
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+
+/* Browser fallback for SlCheckbox: 20px visual box inside the 32px leading slot. */
+.dl-row-checkbox .dl-cb {
+    display: block;
+    width: 20px;
+    height: 20px;
+    margin: 14px 0;
+    accent-color: var(--md-primary);
+}
+
+/* The WebF Cupertino widget owns its painted check mark; only constrain its slot. */
+.dl-row-checkbox .dl-cb-native {
+    display: block;
+    width: 32px;
+    height: 32px;
+    margin: 8px 0;
 }
 
 /*
@@ -603,6 +665,7 @@ html.sl-mode-fullscreen {
 .dl-title {
     display: block;
     font-size: 16px;
+    line-height: 24px;
     color: var(--md-on-surface);
     white-space: nowrap;
     overflow: hidden;
@@ -612,7 +675,8 @@ html.sl-mode-fullscreen {
 .dl-sub {
     display: block;
     margin-top: 2px;
-    font-size: 13px;
+    font-size: 14px;
+    line-height: 20px;
     color: var(--md-on-surface-variant);
     white-space: nowrap;
     overflow: hidden;
@@ -757,7 +821,44 @@ html[data-theme="dark"] .dl-status-orb {
     border-left: 4px solid var(--md-error);
 }
 
-/* ── 窄屏 ─────────────────────────────────────────────────────────────── */
+/* ── 响应式布局 ───────────────────────────────────────────────────────── */
+
+/* 宿主宽屏 Tab：曲库内容从侧栏之后直接展开，页头、筛选栏和列表共用同一条基线。 */
+@media (min-width: 601px) {
+    html.sl-mode-tab .dl-container {
+        max-width: none;
+        margin-left: 0;
+        margin-right: 0;
+        padding-left: 24px;
+        padding-right: 32px;
+    }
+
+    /* 曲库桌面 SongListTile 使用 40px 封面；下载行在宽屏跟随这一密度。 */
+    html.sl-mode-tab .dl-cover,
+    html.sl-mode-tab .dl-cover-img {
+        width: 40px;
+        height: 40px;
+    }
+
+    html.sl-mode-tab .dl-cover {
+        line-height: 40px;
+    }
+
+    html.sl-mode-tab .dl-row-checkbox {
+        height: 40px;
+        line-height: 40px;
+    }
+
+    html.sl-mode-tab .dl-row-checkbox .dl-cb {
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }
+
+    html.sl-mode-tab .dl-row-checkbox .dl-cb-native {
+        margin-top: 4px;
+        margin-bottom: 4px;
+    }
+}
 
 @media (max-width: 600px) {
     /* 分开写 padding（不用简写），否则会顶掉 padding-bottom 的安全区 calc。 */
@@ -772,10 +873,6 @@ html[data-theme="dark"] .dl-status-orb {
     .dl-card-body {
         padding-left: 12px;
         padding-right: 12px;
-    }
-
-    .dl-appbar-title {
-        font-size: 20px;
     }
 
     /*
@@ -794,9 +891,20 @@ html[data-theme="dark"] .dl-status-orb {
         --dl-filter-col: calc((100vw - 42px) / 3);
     }
 
+    /* AppBar / LibraryViewSwitcher use 16px horizontal content padding. */
+    html.sl-mode-tab {
+        --dl-filter-col: calc((100vw - 48px) / 3);
+    }
+
+    html.sl-mode-tab .dl-appbar,
+    html.sl-mode-tab .dl-filter-bar {
+        margin-left: 4px;
+        margin-right: 4px;
+    }
+
     .dl-filter-bar {
         gap: 8px;
-        padding-top: 10px;
+        padding-top: 8px;
         padding-bottom: 10px;
     }
 
@@ -813,6 +921,10 @@ html[data-theme="dark"] .dl-status-orb {
         min-width: 0;
     }
 
+    html.sl-mode-tab .dl-filter-grow {
+        width: calc(100vw - 32px);
+    }
+
     /* 窄屏列表高度兜底：顶部 chrome ≈ 页头/动作行64 + 筛选两行~108 + 容器 pad-top 12
      * ≈ 184，加底部 gap ~12 → 减 210（略偏保守，首帧宁矮不溢出）。fullscreen 的动作行
      * 与页头等高，chrome 相同 → 也用 210。权威值仍由 JS measureListHeight 实测覆盖。 */
@@ -823,4 +935,9 @@ html[data-theme="dark"] .dl-status-orb {
     html.sl-mode-fullscreen {
         --dl-list-h: clamp(240px, calc(100vh - 210px), 720px);
     }
+}
+
+/* The host Tab already consumes the status-bar inset with SafeArea. */
+html.sl-mode-tab .dl-container {
+    padding-top: 0;
 }

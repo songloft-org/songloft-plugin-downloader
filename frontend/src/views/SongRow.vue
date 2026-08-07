@@ -78,12 +78,15 @@ function onCoverError() {
 
 <template>
   <div class="dl-row">
-    <SlCheckbox
-      class="dl-row-cb"
-      :model-value="checked"
-      :aria-label="`选择 ${song.title}`"
-      @update:model-value="emit('toggle', song.id, $event)"
-    />
+    <!-- 与主程序 SongTile 的 leading 复选框保持 32px 槽位，避免封面和标题随控件实现漂移。 -->
+    <div class="dl-row-checkbox">
+      <SlCheckbox
+        class="dl-row-cb"
+        :model-value="checked"
+        :aria-label="`选择 ${song.title}`"
+        @update:model-value="emit('toggle', song.id, $event)"
+      />
+    </div>
 
     <!-- 封面：拿到真实封面显示 <img>，否则圆角方块 + 类型图标占位（对齐主程序 leading） -->
     <div class="dl-cover">

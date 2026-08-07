@@ -91,9 +91,17 @@ function onIntervalCommit() {
     `.dl-overlay-body` 负责与 `.dl-container` 相同的宽度/内边距（含底部安全区）。
   -->
   <div class="dl-page-overlay">
-    <div class="dl-overlay-body">
-      <AppBar title="下载设置" back @back="goMain" />
+    <!--
+      设置内容可超过一屏，返回入口必须始终可见。WebF 不支持 position:sticky，
+      因此页头单独放进 fixed 外壳；正文由 .dl-overlay-body 预留同高空间。
+    -->
+    <div class="dl-settings-appbar">
+      <div class="dl-settings-appbar-inner">
+        <AppBar title="下载设置" back @back="goMain" />
+      </div>
+    </div>
 
+    <div class="dl-overlay-body">
     <!--
       读取失败与「还没读到」必须分开显示。以前 loadSettings 遇到 null 是裸 return，
       于是 settingsLoaded 永远 false、两个输入框永不挂载，用户看到两块空白 —— 与
