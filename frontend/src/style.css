@@ -608,21 +608,13 @@ html.sl-mode-fullscreen {
     vertical-align: middle;
 }
 
-/* Browser fallback for SlCheckbox: 20px visual box inside the 32px leading slot. */
+/* Keep the 20px visual box used by the host Material Checkbox inside the 32px leading slot. */
 .dl-row-checkbox .dl-cb {
     display: block;
     width: 20px;
     height: 20px;
     margin: 14px 0;
     accent-color: var(--md-primary);
-}
-
-/* The WebF Cupertino widget owns its painted check mark; only constrain its slot. */
-.dl-row-checkbox .dl-cb-native {
-    display: block;
-    width: 32px;
-    height: 32px;
-    margin: 8px 0;
 }
 
 /*
@@ -852,11 +844,6 @@ html[data-theme="dark"] .dl-status-orb {
     html.sl-mode-tab .dl-row-checkbox .dl-cb {
         margin-top: 10px;
         margin-bottom: 10px;
-    }
-
-    html.sl-mode-tab .dl-row-checkbox .dl-cb-native {
-        margin-top: 4px;
-        margin-bottom: 4px;
     }
 }
 

@@ -113,9 +113,10 @@ pnpm run build
 前端因此用 **Vue 3 + Vite** 重写（源码在 `frontend/`，产物输出到 `static/`），
 并按 **webf-ui** 规范组织：
 
-- **表单控件**用 `webf_cupertino_ui` 提供的原生元素（`<flutter-cupertino-button>`
-  `<flutter-cupertino-input>` `<flutter-cupertino-switch>` `<flutter-cupertino-checkbox>`
-  `<flutter-cupertino-icon>`）
+- **表单控件**按宿主能力选择原生元素：按钮、输入框和图标使用 `webf_cupertino_ui`
+  （`<flutter-cupertino-button>` `<flutter-cupertino-input>` `<flutter-cupertino-icon>`），
+  开关与歌曲选择框使用标准 `<input type=checkbox>`。WebF 会将后者映射为宿主 Material
+  控件，使复选框外观与主程序曲库保持一致；浏览器模式也复用同一套结构。
 - **下拉选择**是 `<flutter-cupertino-button>` 触发 + **常规流里的内联面板**（普通 `div` 行）。
   webf-ui 里没有任意选项的 picker，原生 `<select>` 在 WebF 下选中值传不回 JS，
   而官方的 action sheet 有一个从 JS 侧无法观测的静默失败模式 —— 三者的取舍见下方
