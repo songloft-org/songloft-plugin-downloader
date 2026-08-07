@@ -334,11 +334,20 @@ html.sl-mode-fullscreen {
 }
 
 /* 设置页开关行（对齐 SwitchListTile：左标题+副标题，右开关）。
- * WebF 里 flex 剩余宽度的分配仍有点飘，所以直接把开关钉到行尾。 */
+ * WebF 里 flex 剩余宽度的分配仍有点飘，所以直接把开关钉到行尾。
+ *
+ * ⚠️ **行宽必须由 JS 以 px 钉住**（SettingsPage.vue 的 measureRows → layout.js 的
+ * fillParentWidth），这条 CSS 单独是不够的。2026-08-07 在 Android 真机上量到：WebF 下
+ * 带元素子节点的块级行不 fill-available，而是按内容 max-content 定宽，于是两个 CSS 完全
+ * 相同的兄弟行量出 281.9 与 332（父内容宽 334.7）；`right: 0` 本身是**对的**（开关右边缘
+ * 精确等于各自行的右边缘），所以症状是「开关没贴到卡片右缘、且两行偏移量还不一样」。
+ *
+ * 这里刻意**不写** `width: 100%`：实测百分比宽度在 WebF 下压根不解析（写与不写都还是
+ * 281.9），留着只会让人以为宽度已经有人管了。完整实测对照表见 fillParentWidth 的头注释。
+ * `padding-right` 保留：给绝对定位的开关留出位置，避免长文案压到开关底下。 */
 .dl-switch-row {
     position: relative;
     display: block;
-    width: 100%;
     padding: 4px 68px 4px 0;
     margin-bottom: 16px;
 }

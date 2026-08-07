@@ -88,6 +88,6 @@ if (typeof console !== 'undefined' && console.log) {
       useNativeUI +
       ' nativeListView=' +
       useNativeListView +
-      ' build=select-boxed',
+      ' build=switch-row-width',
   );
 }

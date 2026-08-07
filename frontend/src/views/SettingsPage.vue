@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, nextTick, onMounted, onUnmounted } from 'vue';
 import AppBar from './AppBar.vue';
 import SectionHead from './SectionHead.vue';
 import StatusView from './StatusView.vue';
@@ -7,6 +7,44 @@ import SlInput from '../ui/SlInput.vue';
 import SlSwitch from '../ui/SlSwitch.vue';
 import { state, saveSettings, loadSettings, goMain, DEFAULT_TEMPLATE } from '../store.js';
 import { normalizeInterval } from '../api.js';
+import { fillParentWidth, onResize } from '../layout.js';
+
+// ── 开关行宽度 ─────────────────────────────────────────────────────────────
+//
+// WebF 下带元素子节点的块级行不 fill-available（退化成 max-content），且**百分比宽度
+// 不解析、只有 px 被采纳** —— 完整实测表见 layout.js 的 fillParentWidth 头注释。
+// 后果是开关（`right: 0` 挂在行上）跟着变窄的行一起左移，而且两行文案长度不同、
+// 左移量还不一样。所以这里量出父容器内容宽、以 px 钉住行宽。
+//
+// 用 querySelector 而不是模板 ref：与 SongList 同理，选择器最确定，且这两行同属
+// 「下载行为」那张卡的 .dl-card-body，父容器一致。
+const WIDTH_RETRIES = 6;
+
+function measureRows(attempt) {
+  const els = document.querySelectorAll('.dl-switch-row');
+  if (fillParentWidth(els)) return;
+  // 异步渲染首帧可能还没 layout。退避重试；全失败也只是回到「开关偏左」的老样子，
+  // 不会更糟，所以不抛错。
+  const n = attempt || 0;
+  if (n < WIDTH_RETRIES) {
+    setTimeout(function () {
+      measureRows(n + 1);
+    }, 32 * (n + 1));
+  }
+}
+
+let offResize = null;
+
+onMounted(() => {
+  nextTick(function () {
+    measureRows(0);
+  });
+  offResize = onResize(() => measureRows(0));
+});
+
+onUnmounted(() => {
+  if (offResize) offResize();
+});
 
 // 独立设置页（原先是主页顶部的一张卡）。拆成两个语义分组，对齐主程序设置页
 // 「一页多个 SectionCard」的形态。
