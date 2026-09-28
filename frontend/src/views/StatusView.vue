@@ -24,9 +24,7 @@ defineEmits(['retry']);
 
 <template>
   <div class="dl-status">
-    <!-- 加载：36px 转圈 + 文案（LoadingIndicator 的形制）。
-         转圈是 CSS @keyframes；WebF 下是否真的动没有验证过，**不动也无妨** ——
-         退化成一个带主色缺口的静态圆环，仍然读得出「正在加载」，不是坏掉的样子。 -->
+    <!-- 加载：36px 转圈 + 文案（LoadingIndicator 的形制）。转圈是 CSS @keyframes。 -->
     <div v-if="variant === 'loading'" class="dl-spinner" />
 
     <!-- 空态：96px 圆底（primary 12%→4% 渐变）+ 48px 主色图标。

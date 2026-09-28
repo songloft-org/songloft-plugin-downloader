@@ -2,13 +2,12 @@
 import { computed } from 'vue';
 import SlIcon from './SlIcon.vue';
 
-// **单一 HTML 实现**（2026-08 混合重构）：不再走 <flutter-cupertino-button> 双分支。
-// 统一用宿主 components.css 的 M3 按钮类（.btn / .btn-filled / .btn-outlined /
-// .btn-text），与主程序 FilledButton / OutlinedButton / TextButton 一致。
+// **单一 HTML 实现**：统一用宿主 components.css 的 M3 按钮类（.btn / .btn-filled /
+// .btn-outlined / .btn-text），与主程序 FilledButton / OutlinedButton / TextButton 一致。
 //
-// ⚠️ WebF 约束仍在（style.css 文件头 ⑦⑧）：
+// ⚠️ 布局约束仍在（style.css 文件头）：
 //   · 图标按钮落点（页头 / 组标题行）是 flex 容器，`.btn` 是 inline-flex，flex 里套
-//     flex 会整个子树不绘制 → 图标按钮改用 `.dl-btn-icon`（inline-block）。
+//     flex 会出问题 → 图标按钮改用 `.dl-btn-icon`（inline-block）。
 //   · 工具栏里的 `.btn` 同样构成 flex 套 flex → 由 style.css 的
 //     `.dl-toolbar > .btn { display:inline-block }` 覆盖。
 //   · 按钮内容层 `.dl-btn-inner` 必须 inline-flex（不能 flex），否则宽度撑满整行。

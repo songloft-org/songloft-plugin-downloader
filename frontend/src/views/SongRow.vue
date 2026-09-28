@@ -7,13 +7,6 @@ import { coverUrl, acquireCoverSlot } from '../covers.js';
 // 歌曲行：**统一的 ListTile 形态**（2026-08 重做，对齐主程序 SongTile）。
 // 不再有「宽屏多列表格 / 窄屏两层」双布局——所有宽度都是单行：
 //   复选框 + 48 封面占位 + [标题 / 艺术家·专辑·来源] + 状态。
-//
-// ⚠️ WebF 约束（style.css 文件头）：
-//   · 横向 flex 行合规；竖排两层文本用**块流**（.dl-title/.dl-sub 都是 block），
-//     不是竖向 flex（约束 ⑧：flex 套 flex 整个子树不绘制）。
-//   · 复选框(WidgetElement)与封面被块盒包一层，不直接当 flex item（约束 ⑦）。
-//   · 标题/副标题 nowrap + ellipsis（约束 ①：可换行 CJK 在 min-content 下被按每字一行
-//     测量）。
 
 const props = defineProps({
   song: { type: Object, required: true },
@@ -42,9 +35,8 @@ const statusText = computed(() => {
 // 真实封面：带 access_token 的 endpoint URL，直接喂 `<img src>`（见 covers.js）。
 // 无封面（cover_url 为空）时为 ''，保持占位图标。
 //
-// 并发闸门：WebF 的 <img> 赋 src 即发真实请求且无并发上限，故先申请槽位、拿到才赋 src，
-// load/error 或行卸载时释放槽位（见 covers.js 头注释）。native ListView 回收会卸载本行，
-// onUnmounted 里释放；未拿到槽位则退队。
+// 并发闸门：先申请槽位、拿到才赋 src，load/error 或行卸载时释放槽位
+// （见 covers.js 头注释）。
 const coverSrc = ref('');
 let slot = null;
 

@@ -17,9 +17,8 @@ const toOptions = (values) => values.map((v) => ({ value: v, label: v }));
 
 <template>
   <!--
-    `dl-filter-z4..z1` 是**递减**的层叠顺序，不是装饰性类名：展开的下拉面板必须压住
-    它后面那些筛选项（WebF 按子树绘制、z-index 只在同父兄弟间排序）。加/减/重排筛选项
-    时这四个类要跟着调，理由与两种层叠模型的判据写在 style.css 的 `.dl-filter-item` 上。
+    `dl-filter-z4..z1` 是**递减**的层叠顺序，不是装饰性类名：展开时后面的筛选项
+    与前面的浮层互有叠放约定。加/减/重排筛选项时这四个类要跟着调。
   -->
   <div class="dl-filter-bar">
     <div class="dl-filter-item dl-filter-z4">
@@ -50,8 +49,7 @@ const toOptions = (values) => values.map((v) => ({ value: v, label: v }));
     <div class="dl-filter-item dl-filter-grow dl-filter-z1">
       <!--
         `:key` 挂 keywordGen：切歌单清空关键字时（store.js changePlaylist）代数 +1，
-        输入框带空值重挂载 —— 原生输入是非受控的，这是外部清空唯一能落到 DOM 的通道
-        （机制见 ui/SlInput.vue 注释与主仓 docs/webf/handoff.md 第 25 条）。
+        输入框带空值重挂载 —— 避免外部改值把光标推到末尾。
       -->
       <SlInput
         :key="'dl-kw-' + keywordGen"

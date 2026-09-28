@@ -1,6 +1,5 @@
 import { reactive, computed, ref, watch } from 'vue';
 import * as api from './api.js';
-import { openToken } from './ui/select-open-state.js';
 
 // 单页应用、单份全局状态、无跨路由复用 —— 刻意不引 Pinia，一个模块级 reactive 够了。
 
@@ -16,13 +15,9 @@ export const state = reactive({
     autoDownload: false,
   },
   /**
-   * 设置是否已从服务端读回。**用途不是显示 loading，而是非受控输入的正确性前提**：
-   * WebF 原生输入挂载后**永不回写** val（回写会走 `RenderEditable.text=` →
-   * `markNeedsLayout`，与同帧 MouseTracker 的 hit test 相撞出 `Text layout not
-   * available` → `!_debugDuringDeviceUpdate` 每帧刷屏、整页白屏，2026-08-05 实测，
-   * 机制见主仓 docs/webf/handoff.md 第 25 条）。挂载初值是唯一一次赋值机会 ——
-   * 所以必须等值到齐再挂载，否则输入框会永久显示空值。
-   * 详见 views/SettingsPage.vue 与 ui/SlInput.vue 的注释。
+   * 设置是否已从服务端读回。**用途不是显示 loading，而是输入框初值的正确性前提**：
+   * 必须等值到齐再挂载，否则加载失败时输入框显示的是上一次的旧值（或空值）。
+   * 详见 views/SettingsPage.vue 的注释。
    */
   settingsLoaded: false,
   /**
@@ -42,15 +37,8 @@ export const state = reactive({
   /**
    * 插件内的两级页面。`'main'` 列表主体 / `'settings'` 独立设置页。
    *
-   * 设置页是**全屏覆盖层**，主页始终挂载（App.vue 注释：v-if 换页的大规模拆除会撞
-   * WebF 的 dispose 竞态 → 整页白屏）。覆盖层由 SettingsPage 的 v-if 挂卸，
-   * 打开 = 纯挂载、关闭 = 小规模拆除，两条路径都已被实证安全。
-   *
-   * ⚠️ **刻意不用 `history.pushState` 表达这一层**。WebF 不实现 SPA history 路由，
-   * 而宿主的 requestBack 是按 `history.length > 1` 判断「返回键已被消费」的 ——
-   * pushState 之后宿主以为消费了、WebF 又不 fire popstate，页面毫无变化，
-   * **返回键变成死键**。改用宿主提供的 `SongloftPlugin.onHostBack` 钩子
-   * （见 App.vue），语义准确且无副作用。
+   * 设置页是**全屏覆盖层**，主页始终挂载（App.vue 注释：覆盖层形态让主页的滚动
+   * 位置与筛选状态不因进出设置而丢失）。覆盖层由 SettingsPage 的 v-if 挂卸。
    */
   page: 'main',
   /** songId -> {song_id, status, ...}，来自批量下载进度里的 results */
@@ -71,10 +59,9 @@ export const state = reactive({
 export const selected = ref(new Set());
 
 /**
- * 关键字输入框的**重挂载代数**。WebF 原生输入是非受控的（ui/SlInput.vue 注释：
- * 挂载后永不回写 val，回写会触发 RenderEditable 白屏崩溃链），所以「切歌单时清空
- * 关键字」这种**外部清空**没法靠 store → 绑定刷回去，只能让 FilterBar 的关键字
- * 输入框 `:key` 挂这个代数、清空时 +1，带着空值重挂载（mount 路径安全）。
+ * 关键字输入框的**重挂载代数**。「切歌单时清空关键字」这种外部清空靠 `:key` 挂这个
+ * 代数、清空时 +1，带着空值重挂载。受控输入下其实可以直接回写，但保留重挂载
+ * 可以避免外部改值把光标推到末尾（打字中间态被改写的场景）。
  */
 export const keywordGen = ref(0);
 
@@ -104,10 +91,8 @@ export const visibleSongs = computed(() => {
 
 // 筛选条件 → 可见歌曲数，落一行日志。
 //
-// 为什么值得常驻：这一页的下拉在 WebF 下换过两次实现，症状每次都是「点了没反应」
-// 且**不报错**。而「控件把值 emit 出来了」与「列表真的重筛了」是两件事，只有这一行
-// 能同时证明两者 —— 它既覆盖三个下拉，也覆盖关键字输入（后者一直是好的，正好当对照组）。
-// 日志经客户端 `onJSLog` 转发成 `[plugin][console] …`，是真机上唯一的取证通道。
+// 为什么值得常驻：只有这一行能同时证明「控件把值 emit 出来了」与「列表真的重筛了」
+// —— 它既覆盖三个下拉，也覆盖关键字输入（后者一直是好的，正好当对照组）。
 watch(
   () => [
     state.filter.playlistId,
@@ -156,12 +141,9 @@ export const allVisibleSelected = computed(() => {
 // ── actions ────────────────────────────────────────────────────────────────
 
 /**
- * 切页。切之前先收起可能展开的下拉浮层：设置覆盖层会把主页整个盖住，
- * 留着展开的面板在底下，返回主页时会看到一个无主的悬浮面板；且 `openToken`
- * 是**模块级**互斥标记，不清就会继续挡其它下拉的展开。
+ * 切页。
  */
 function navigate(page) {
-  openToken.value = null;
   state.page = page;
 }
 
@@ -218,21 +200,8 @@ function settingsFingerprint() {
 /**
  * 保存设置。**值没变就不发请求。**
  *
- * 这个守卫不是省流量，是修 bug：文本框的「改完即存」在 webf-ui 分支上挂在
- * `blur` 事件上，而 `<flutter-cupertino-input>` 的 blur 是这样派发的
- * （webf_cupertino_ui 0.4.1 `input.dart` 的 `initState`）：
- *
- *     _focusNode!.addListener(() {
- *       if (_focusNode!.hasFocus) dispatchEvent(CustomEvent('focus'));
- *       else                      dispatchEvent(CustomEvent('blur'));
- *     });
- *
- * 注意它**没有记住上一次的焦点态** —— FocusNode 只要在未聚焦状态下发出任何一次
- * 通知，就会再派发一个 `blur`。所以「blur == 用户改完了一个值」这个前提不成立，
- * 实测日志里出现过十几次内容完全相同的 `POST /api/settings`。
- * 与其去猜 FocusNode 什么时候会通知，不如让「值没变」这件事本身变得无害。
- *
- * 顺带覆盖了开关与 startDownload 两条调用路径，它们同样不该重复提交。
+ * 这个守卫不是省流量，是防重复提交：文本框的「改完即存」挂在 change 语义上，
+ * 与开关、startDownload 两条调用路径共用本函数，语义统一为「值没变就跳过」。
  */
 export function saveSettings() {
   const fp = settingsFingerprint();
@@ -298,7 +267,7 @@ export async function changePlaylist(id) {
   state.filter.album = '';
   if (state.filter.keyword !== '') {
     state.filter.keyword = '';
-    // 原生输入是非受控的，清空必须靠重挂载才能反映到 DOM（见 keywordGen 注释）
+    // 外部清空靠重挂载落到 DOM（见 keywordGen 注释）
     keywordGen.value++;
   }
   await loadSongs();

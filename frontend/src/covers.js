@@ -5,15 +5,14 @@
 //     `?w=` 服务端缩略）。该 endpoint 需鉴权，`<img src>` 无法带 Authorization 头；
 //   · 但 auth 中间件（internal/middleware/auth.go）支持 `?access_token=` query 兜底，
 //     于是把 token 拼进 URL，`<img>` 就能原生加载 —— 无 fetch、无 blob、无 base64；
-//   · 旧实现在 WebF（无 URL.createObjectURL/FileReader）下只能把 blob 转成 data: URL，
-//     几百首歌的大 base64 字符串常驻内存 + 逐个解码，列表滚动明显卡顿。改直连后由渲染层
-//     自己管理图片解码与内存，滚动顺滑。
+//   · 旧实现把 blob 转成 data: URL，几百首歌的大 base64 字符串常驻内存 + 逐个解码，
+//     列表滚动明显卡顿。改直连后由渲染层自己管理图片解码与内存，滚动顺滑。
 //
 // 为什么仍需并发闸门（acquireCoverSlot）：
-//   · WebF 的 `<img>` 一旦被赋 src 会立即经 Dio 发起真实 GET，且**无内建并发上限**。
-//     一屏十几行 + 快速滚动会瞬间把几十个请求全砸向本地后端；远程封面要代理+缩略，单个
-//     就 7-9s，连接池被打爆后报 `NSURLErrorDomain -1005 network connection lost`。
-//   · 故沿用旧实现的思路限制在途数量，只是节流点从「fetch」挪到「给 <img> 赋 src」：
+//   · 快速滚动时一屏十几行会瞬间把几十个 `<img>` 请求全砸向本地后端；远程封面要
+//     代理+缩略，单个就 7-9s，连接池被打爆后报 `NSURLErrorDomain -1005 network
+//     connection lost`。
+//   · 故沿用旧实现的思路限制在途数量，节流点在「给 <img> 赋 src」：
 //     SongRow 先申请槽位，拿到才赋 src；`<img>` load/error 后释放，放行下一个。
 
 // 封面盒 48px 的 2x，走 endpoint 的 ?w= 服务端缩略，控制远程封面体积

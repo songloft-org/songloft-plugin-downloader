@@ -20,9 +20,9 @@ import {
 // >0 时显示「下载 N」），既省一处空间又让主操作自带选中反馈。
 //
 // 组件多根（fragment）：这些按钮直接作为页头/动作行 flex 容器的子项排布。
-// 图标按钮是 .dl-btn-icon（inline-block，约束⑧安全）；filled 的下载按钮是宿主
+// 图标按钮是 .dl-btn-icon（inline-block 安全）；filled 的下载按钮是宿主
 // .btn（inline-flex），在 flex 容器里需降级 inline-block —— 由 style.css 的
-// `.dl-appbar .btn / .dl-action-row .btn` 覆盖（与旧 .dl-toolbar>.btn 同理）。
+// `.dl-appbar .btn / .dl-action-row .btn` 覆盖。
 const downloadLabel = computed(() =>
   selected.size > 0 ? `下载 ${selected.size}` : '下载',
 );

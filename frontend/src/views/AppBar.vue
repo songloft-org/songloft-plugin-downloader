@@ -31,8 +31,7 @@ defineEmits(['back']);
       :label="backLabel"
       @click="$emit('back')"
     />
-    <!-- flex:1 让标题吃掉中间空白，把插槽里的操作按钮顶到右侧。
-         刻意不用 `margin-left:auto` —— flex 里的自动外边距在 WebF 下没验证过。 -->
+    <!-- flex:1 让标题吃掉中间空白，把插槽里的操作按钮顶到右侧。 -->
     <span class="dl-appbar-title">{{ title }}</span>
     <slot />
   </div>

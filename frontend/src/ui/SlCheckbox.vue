@@ -7,8 +7,6 @@ defineProps({
 });
 const emit = defineEmits(['update:modelValue']);
 
-// WebF maps input[type=checkbox] to the host Material Checkbox, so both engines
-// share the same themed control instead of diverging on a Cupertino widget.
 function onChange(e) {
   emit('update:modelValue', e.target.checked);
 }

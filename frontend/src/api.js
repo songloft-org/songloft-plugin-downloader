@@ -1,7 +1,7 @@
 // 与插件后端（src/main.ts 的 router）通信。
 //
 // 走宿主注入的 window.SongloftPlugin.apiGet / apiPost —— 它们负责补 baseURL、
-// 带上 access_token、以及在 WebF / WebView / iframe 三条路径上统一行为。
+// 带上 access_token、以及在 WebView / iframe 两条路径上统一行为。
 // 刻意不用裸 fetch：鉴权与 base path 的处理都在宿主那一层。
 //
 // 端点与字段名与 src/main.ts **一一对应**，本次重写没有改动任何后端契约。
